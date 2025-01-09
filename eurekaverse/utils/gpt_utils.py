@@ -23,12 +23,13 @@ with open(Path(f"{file_dir}/../gpt/terrain_example_evolution.py")) as f:
     evolution_terrain_example = f.read()
 
 client = OpenAI()
-replay_run = "/home/exx/Projects/autoenv/autoenv/outputs/autoenv/2024-07-04_23-19-34/gpt_queries"  # Set to a log directory (e.g., "outputs/.../gpt_queries") to replay a specific run's LLM responses
+replay_run = ""  # Set to a log directory (e.g., "outputs/.../gpt_queries") to replay a specific run's LLM responses
 replay_idx = 0   # Used to keep track of which response to load from a run (if replay_run is set)
 replay_idx_lock = threading.Lock()
 replay_initial_only = False  # Set to True to only replay initial queries and generate evolution queries from scratch
 
 gpt_pricing = {
+    "gpt-4o-2024-08-06": (2.5e-6, 1e-5),
     "gpt-4o-2024-05-13": (5e-6, 1.5e-5),  # GPT-4o: $0.005/1K input, $0.015/1K output
     "gpt-4-0125-preview": (1e-5, 3e-5),   # GPT-4 Turbo: $0.01/1K input, $0.03/1K output
     "gpt-4-0613": (3e-5, 6e-5),           # GPT-4: $0.03/1K input, $0.06/1K output
