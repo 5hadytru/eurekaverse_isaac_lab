@@ -31,6 +31,7 @@
 import numpy as np
 import os
 from datetime import datetime
+import gc
 
 import isaacgym
 import argparse
@@ -106,6 +107,13 @@ def train(args):
     
     print(f"Starting training, using log directory {log_dir}...")
     ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True)
+
+    # added this code due to RAM issues
+    env.close()
+    del env
+    del ppo_runner
+    gc.collect()
+
     wandb.finish(quiet=True)
     print("Done training!")
 
