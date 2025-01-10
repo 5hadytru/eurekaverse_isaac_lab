@@ -16,7 +16,7 @@ render_images: False                   # Render generated environments (doesn't 
 best_run_proportions: [0.75, 0.25]     # Proportion of next-iteration runs to train on for the best, next-best, etc. curent runs
 deterministic_gpu: True                # Deterministically assign training and eval evenly across GPUs (assumes they are all empty)
 
-wandb: False                           # Use wandb tracking
+wandb: True                            # Use wandb tracking
 
 gpt_model: "gpt-4o-2024-08-06"         # Which GPT model to use (gpt-4o-2024-05-13, gpt-4-0125-preview, gpt-4-0613, gpt-3.5-turbo-0125)
 initial_query_sample_multiplier: 4     # Multiplier for the number of samples to query in first iteration
