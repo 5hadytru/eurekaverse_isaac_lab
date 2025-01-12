@@ -39,7 +39,8 @@ import time
 class BaseTask():
 
     def __init__(self, cfg, sim_params, physics_engine, sim_device, headless):
-        self.gym = gymapi.acquire_gym()
+        
+        self.acquire_gym_with_retry()
 
         self.sim_params = sim_params
         self.physics_engine = physics_engine
@@ -120,6 +121,18 @@ class BaseTask():
         self.command_control = False
         self.lookat_id = 0
         self.lookat_vec = torch.tensor([-0, 2, 1], requires_grad=False, device=self.device)
+
+    def acquire_gym_with_retry(self, max_attempts=60, delay=10):
+        attempt = 0
+        while True:
+            try:
+                self.gym = gymapi.acquire_gym()
+                return
+            except RuntimeError as e:
+                attempt += 1
+                if attempt >= max_attempts:
+                    raise RuntimeError(f"Failed to acquire gym after {max_attempts} attempts") from e
+                time.sleep(delay)
 
     def get_observations(self):
         return self.obs_buf

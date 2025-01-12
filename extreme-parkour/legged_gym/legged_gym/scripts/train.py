@@ -44,6 +44,8 @@ import subprocess
 from pathlib import Path
 import pickle
 
+from legged_gym.utils import webviewer
+
 os.environ["WANDB_SILENT"] = "False"
 file_dir = os.path.dirname(os.path.abspath(__file__))  # Location of this file
 
@@ -104,15 +106,21 @@ def train(args):
     with open(log_dir / "legged_robot_config.pkl", "wb") as f:
         cfg = (env_cfg, train_cfg)
         pickle.dump(cfg, f)
-    
+
+    if args.web:
+        web_viewer = webviewer.WebViewer()
+        web_viewer.setup(env)
+    else:
+        web_viewer = None
+
     print(f"Starting training, using log directory {log_dir}...")
-    ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True)
+    ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True, web_viewer=web_viewer)
 
     # added this code due to RAM issues
-    env.close()
-    del env
-    del ppo_runner
-    gc.collect()
+    # env.close()
+    # del env
+    # del ppo_runner
+    # gc.collect()
 
     wandb.finish(quiet=True)
     print("Done training!")
@@ -127,12 +135,15 @@ if __name__ == '__main__':
     parser.add_argument("--checkpoint", type=int, default=-1, help="Which model checkpoint to load. If -1, will load the last checkpoint. Overrides config file if provided.")
     parser.add_argument("--max_iterations", type=int, help="Maximum number of training iterations. Overrides config file if provided.")
     parser.add_argument("--render_images", action="store_true", default=False, help="Render the environment and save images")
+    parser.add_argument("--web", action="store_true", default=False, help="Visualize training via web viewer")
 
     args = parser.parse_args()
     args = process_args(args)
     if not args.headless:
         print("Setting headless to True, overriding")
         args.headless = True
+
+    assert not (args.web and args.render_images), "Cannot render images and use web viewer at the same time"
 
     args.script = "train"
     train(args)

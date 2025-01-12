@@ -112,9 +112,8 @@ class OnPolicyRunner:
         self.tot_timesteps = 0
         self.tot_time = 0
         self.current_learning_iteration = 0
-        
 
-    def learn_RL(self, num_learning_iterations, init_at_random_ep_len=False):
+    def learn_RL(self, num_learning_iterations, init_at_random_ep_len=False, web_viewer=None):
         if init_at_random_ep_len:
             self.env.episode_length_buf = torch.randint_like(self.env.episode_length_buf, high=int(self.env.max_episode_length))
         obs = self.env.get_observations()
@@ -149,6 +148,15 @@ class OnPolicyRunner:
                     obs, critic_obs, rewards, dones = obs.to(self.device), critic_obs.to(self.device), rewards.to(self.device), dones.to(self.device)
                     self.alg.process_env_step(rewards, dones, infos)
                     
+                    # Add web viewer rendering
+                    if web_viewer:
+                        web_viewer.render(
+                            fetch_results=True, 
+                            step_graphics=True,
+                            render_all_camera_sensors=True,
+                            wait_for_page_load=True
+                        )
+
                     if self.log_dir is not None:
                         # Book keeping
                         if 'episode' in infos:
