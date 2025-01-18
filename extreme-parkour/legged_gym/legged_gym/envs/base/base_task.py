@@ -122,16 +122,18 @@ class BaseTask():
         self.lookat_id = 0
         self.lookat_vec = torch.tensor([-0, 2, 1], requires_grad=False, device=self.device)
 
-    def acquire_gym_with_retry(self, max_attempts=60, delay=10):
+    def acquire_gym_with_retry(self, max_attempts=60):
         attempt = 0
         while True:
             try:
                 self.gym = gymapi.acquire_gym()
                 return
             except RuntimeError as e:
+                print(f"Attempt {attempt} at acquiring gym")
                 attempt += 1
                 if attempt >= max_attempts:
                     raise RuntimeError(f"Failed to acquire gym after {max_attempts} attempts") from e
+                delay = random.randint(10, 40)
                 time.sleep(delay)
 
     def get_observations(self):
