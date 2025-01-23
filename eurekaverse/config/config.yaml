@@ -5,8 +5,8 @@ defaults:
 
 quadruped_model: "go1"                 # Robot model, "go1" or "a1"
 
-iterations: 6                          # Number of environment generation iterations
-train_iterations: 2000                 # Number of training iterations per generated environment
+iterations: 8                          # Number of environment generation iterations
+train_iterations: 1000                 # Number of training iterations per generated environment
 eval_steps: 1001                       # Number of evaluation steps per environment (1001 is fairly accurate, 10001 is most accurate)
 num_terrain_types: 10                  # Number of terrains to generate
 num_parallel_runs: 6                   # Number of parallel training runs per iteration

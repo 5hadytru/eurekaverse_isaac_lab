@@ -234,7 +234,6 @@ def evaluate(args):
         if args.replay_depth and t % env_cfg.depth.update_interval == 0:
             infos["depth"] = saved_depth[(t // env_cfg.depth.update_interval) % len(saved_depth)].to(env.device)
 
-
         if args.web:
             web_viewer.render(fetch_results=True, step_graphics=True, render_all_camera_sensors=True, wait_for_page_load=True)
 
@@ -277,6 +276,15 @@ def evaluate(args):
     sum_counter_per_env = sum_counter_per_env.cpu()
     edge_violation_sum_per_env = edge_violation_sum_per_env.cpu()
 
+    # since curriculum=False, terrain_levels (in the LeggedRobot env object) is a (num_envs,) tensor containing
+    # a sequence of ranges from 0 to num_rows (number of difficulties; 10 in our case)
+    # env_class maps envs to their idxes in the set_terrain list of set_terrain_fns (env's variations)
+    # so terrain_cells becomes a set of len num_envs containing tensors like (variation, difficulty)
+
+    # in the case of eurekaverse, the range of variations (set_idx; contained in env_class) will be determined by 
+    # config.yaml (it will be range(cfg.num_terrain_types))
+    # there will be variations repeated if LeggedRobotCfg.terrain.num_cols > cfg.num_terrain_types
+    # the range of difficulties will be range(LeggedRobotCfg.terrain.num_rows)
     terrain_cells = set(zip(env.env_class.cpu().numpy().tolist(), env.terrain_levels.cpu().numpy().tolist()))
     mean_rew_per_cell_buffer, mean_rew_terms_per_cell_buffer, mean_len_per_cell_buffer, mean_goals_per_cell_buffer, mean_edge_violation_per_cell_buffer = {}, {}, {}, {}, {}
     mean_rew_terms_per_cell_buffer = {term: {} for term in rew_terms_sum_per_env.keys()}

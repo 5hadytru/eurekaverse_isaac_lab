@@ -95,7 +95,7 @@ class Terrain:
                 terrain.height_field_raw[-pad_width:, :] = pad_height
 
                 self.add_terrain_to_map(terrain, i, j)
-        
+
         self.heightsamples = self.height_field_raw
         if self.type=="trimesh":
             print("Converting heightmap to trimesh...")

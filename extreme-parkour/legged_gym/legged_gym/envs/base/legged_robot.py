@@ -1139,7 +1139,13 @@ class LeggedRobot(BaseTask):
             self.randomize_levels = torch.zeros_like(self.terrain_levels, dtype=torch.bool, device=self.device, requires_grad=False)
             self.env_origins[:] = self.terrain_origins[self.terrain_levels, self.terrain_types]
             
+            # terrain_class is a 2D tensor (num_rows, num_cols) containing an int for each cell in the terrain grid which refers to
+            # a idx in the set_terrain list of set_terrain_fns
             self.terrain_class = torch.from_numpy(self.terrain.terrain_type).to(self.device)
+
+            # terrain_levels is a 1D tensor containing the difficulty/level (in range(0, num_rows)) of each env
+            # terrain_types is a 1D tensor containing the variation (in range(0, num_cols)) of each env
+            # env_class therefore maps envs to their idxes in the set_terrain list of set_terrain_fns (variations)
             self.env_class[:] = self.terrain_class[self.terrain_levels, self.terrain_types]
 
             self.terrain_goals = torch.from_numpy(self.terrain.goals).to(self.device).to(torch.float)
