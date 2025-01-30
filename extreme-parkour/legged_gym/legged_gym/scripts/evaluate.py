@@ -28,10 +28,11 @@
 #
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
-import os
+import os, time
 import sys
 from tqdm import tqdm
 import argparse
+import cv2
 from pathlib import Path
 import numpy as np
 import isaacgym
@@ -91,6 +92,24 @@ def evaluate(args):
     if not args.headless:
         env_cfg.commands.ranges.lin_vel_x[0] = 0
         env_cfg.commands.ranges.lin_vel_y[0] = 0
+
+    # rendering logic
+    if args.render_locally:
+        # assert not args.headless
+        env_cfg.env.render_envs = True
+        render_log_dir = Path(LEGGED_GYM_ROOT_DIR) / "logs" / args.proj_name / args.exptid / "eval_renders"
+        if render_log_dir is not None:
+            render_log_dir.mkdir(parents=True, exist_ok=True)
+
+        envs_to_render = list(range(10))
+        fps = 30
+        frame_width = 640
+        frame_height = 480
+        codec = cv2.VideoWriter_fourcc(*'mp4v')
+
+        video_writers = {}
+        for env_id in envs_to_render:
+            video_writers[env_id] = cv2.VideoWriter(os.path.join(render_log_dir, f"env_{env_id}.mp4"), codec, fps, (frame_width, frame_height))
 
     # prepare environment
     env: LeggedRobot
@@ -237,7 +256,26 @@ def evaluate(args):
         if args.web:
             web_viewer.render(fetch_results=True, step_graphics=True, render_all_camera_sensors=True, wait_for_page_load=True)
 
+        if args.render_locally:
+            start = time.time()
+            env_imgs = env.render_envs(env_ids=envs_to_render)
+            print(f"Took {time.time() - start:.2f}s to render images")
+
+            start = time.time()
+            for frame_i, (viewpoint, frame) in enumerate(env_imgs.items()):
+                # Convert the image from RGBA (IsaacGym) to BGR (OpenCV) if needed
+                bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+            
+                env_id = envs_to_render[frame_i]
+                video_writers[env_id].write(bgr_frame)
+                
+            print(f"Took {time.time() - start:.2f}s to write images")
+
         lookat_id = env.lookat_id
+
+        if args.render_locally:
+            for v in video_writers:
+                v.release()
 
         # Log stuff
         # cur_rew_sum += rews
@@ -433,19 +471,21 @@ if __name__ == '__main__':
     parser.add_argument("--replay_actions", action="store_true", default=False, help="Replay actions stored from deployment")
     parser.add_argument("--replay_depth", action="store_true", default=False, help="Replay depth stored from deployment")
 
+    parser.add_argument("--render_locally", action="store_true", default=False, help="Render videos of robot")
+
     args = parser.parse_args()
     args = process_args(args)
 
-    if not args.headless:
-        env_cfg, _ = task_registry.get_cfgs(name=args.task)
-        # Setting up exactly one env per terrain grid cell
-        if args.terrain_rows is None:
-            print("Setting terrain_rows to 1 as default")
-            args.terrain_rows = 1
-        if args.terrain_cols is None:
-            args.terrain_cols = env_cfg.terrain.num_cols
-        if args.num_envs is None:
-            args.num_envs = args.terrain_rows * args.terrain_cols
-    
+    # if not args.headless:
+    #     env_cfg, _ = task_registry.get_cfgs(name=args.task)
+    #     # Setting up exactly one env per terrain grid cell
+    #     if args.terrain_rows is None:
+    #         print("Setting terrain_rows to 1 as default")
+    #         args.terrain_rows = 1
+    #     if args.terrain_cols is None:
+    #         args.terrain_cols = env_cfg.terrain.num_cols
+    #     if args.num_envs is None:
+    #         args.num_envs = args.terrain_rows * args.terrain_cols
+
     args.script = "evaluate"
     evaluate(args)

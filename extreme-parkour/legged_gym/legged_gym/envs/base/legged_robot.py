@@ -1344,12 +1344,18 @@ class LeggedRobot(BaseTask):
 
         return heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
     
-    def render_envs(self):
+    def render_envs(self, env_ids=None):
         if not self.cfg.env.render_envs:
             return None
         env_imgs = {}
         print("Rendering envs...")
-        for env_id in tqdm(range(self.num_envs)):
+
+        if env_ids:
+            envs_to_render = env_ids
+        else:
+            envs_to_render = list(range(self.num_envs))
+
+        for env_id in envs_to_render:
             for viewpoint_name in self.env_camera_location_viewpoint_offsets:
                 self.gym.step_graphics(self.sim)
                 self.gym.render_all_camera_sensors(self.sim)
