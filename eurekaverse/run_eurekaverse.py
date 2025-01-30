@@ -271,7 +271,14 @@ def initial_generation(cfg, parallel_run_id):
 def query_and_check_response(cfg, it, parallel_run_id, terrain_id, prev_executable_terrains, prev_eval_strings, all_prev_terrain_descriptions):
     for query_id in range(cfg.max_gpt_queries):
         terrain_stats = get_terrain_stats_string(prev_executable_terrains[terrain_id])
-        query_messages, gpt_responses, gpt_parsed_responses, prompt_cost, response_cost = query_gpt_evolution(cfg, prev_executable_terrains[terrain_id], prev_eval_strings[terrain_id], terrain_stats, all_prev_terrain_descriptions, num_samples=cfg.evolution_query_sample_multiplier)
+        query_messages, gpt_responses, gpt_parsed_responses, prompt_cost, response_cost = query_gpt_evolution(
+            cfg, 
+            prev_executable_terrains[terrain_id], # terrain to be evolved
+            prev_eval_strings[terrain_id], # policy statistics before and after training for terrain to be evolved
+            terrain_stats, # height max and differences for each terrain
+            all_prev_terrain_descriptions, # all terrain descriptions in this parallel run's lineage
+            num_samples=cfg.evolution_query_sample_multiplier
+        )
         log_gpt_query(query_messages, gpt_responses, save_dir=gpt_queries_dir / f"iter-{it}" / f"run-{parallel_run_id}" / f"terrain-{terrain_id}_query-{query_id}")
 
         sample_id_start = query_id * len(gpt_responses)
@@ -283,13 +290,16 @@ def query_and_check_response(cfg, it, parallel_run_id, terrain_id, prev_executab
 def evolution_generation(cfg, it, parallel_run_id):
     # Load executable terrains, evaluation strings, and learning progress
     all_prev_executable_terrains = []
+    
+    # parallel_run_lineage maps parallel_run_ids -> it -> ordered expt_ids
+    # so here we're getting all previous terrains encountered on this run
     for i, resume_run_id in enumerate(parallel_run_lineage[parallel_run_id]):
         all_prev_executable_terrains.extend(all_executable_terrains[i][resume_run_id])
 
-    resume_run_id = parallel_run_lineage[parallel_run_id][-1]
-    prev_executable_terrains = all_executable_terrains[it-1][resume_run_id]
+    resume_run_id = parallel_run_lineage[parallel_run_id][-1] # run to resume from on this iteration
+    prev_executable_terrains = all_executable_terrains[it-1][resume_run_id] # set_terrains from last iteration for this run
     prev_eval_strings = []
-    for terrain_id in range(cfg.num_terrain_types):
+    for terrain_id in range(cfg.num_terrain_types): # get pre- and post-training stats for each terrain; rewards, goals, episode lens
         prev_eval_strings.append("\n".join([
             "Before training:",
             stat_to_str(eval_pre_training_stats_per_terrain[it-1][resume_run_id][terrain_id]),
@@ -304,6 +314,7 @@ def evolution_generation(cfg, it, parallel_run_id):
     with ThreadPoolExecutor(max_workers=cfg.num_parallel_checks) as executor, seeded():
         futures = []
         for terrain_id in range(cfg.num_terrain_types):
+            # get GPT-generated descriptions for each previously encountered terrain
             all_prev_terrain_descriptions = [get_terrain_descriptions(terrain_fn) for terrain_fn in all_prev_executable_terrains]
             all_prev_terrain_descriptions = [desc for desc in all_prev_terrain_descriptions if desc is not None]
             futures.append(executor.submit(query_and_check_response, cfg, it, parallel_run_id, terrain_id, prev_executable_terrains, prev_eval_strings, all_prev_terrain_descriptions))

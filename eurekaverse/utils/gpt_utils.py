@@ -51,6 +51,13 @@ def query_gpt_initial(cfg, num_samples=1):
     return query_gpt(cfg, messages, num_samples)
 
 def query_gpt_evolution(cfg, prev_terrain_code, eval_statistics, terrain_stats, all_best_terrain_descriptions, num_samples=1):
+    """
+    cfg, 
+    prev_terrain_code # terrain to be evolved
+    eval_statistics # policy statistics before and after training for terrain to be evolved
+    terrain_stats # height max and differences for each terrain
+    all_best_terrain_descriptions # all terrain descriptions in this parallel run's lineage
+    """
     global replay_run
     if replay_initial_only:
         replay_run = ""
