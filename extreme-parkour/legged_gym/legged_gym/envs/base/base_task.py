@@ -91,6 +91,7 @@ class BaseTask():
 
         # if running with a viewer, set up keyboard shortcuts and camera
         if self.headless == False:
+            raise Exception("Porting to Isaac Lab was done with headless assumption")
             # subscribe to keyboard shortcuts
             self.viewer = self.gym.create_viewer(
                 self.sim, gymapi.CameraProperties())
