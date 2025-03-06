@@ -101,6 +101,7 @@ class LeggedRobot(BaseTask):
                                                               interpolation=torchvision.transforms.InterpolationMode.BICUBIC)
         
         if not self.headless:
+            raise Exception("Porting to Isaac Lab was done with headless assumption")
             self.set_camera(self.cfg.viewer.pos, self.cfg.viewer.lookat)
         self._init_buffers()
         self._prepare_reward_function()

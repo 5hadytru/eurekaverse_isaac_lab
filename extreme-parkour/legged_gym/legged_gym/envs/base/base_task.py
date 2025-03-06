@@ -29,8 +29,6 @@
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
 import sys
-from isaacgym import gymapi
-from isaacgym import gymutil, gymtorch
 import numpy as np
 import torch
 import time
@@ -40,8 +38,6 @@ class BaseTask():
 
     def __init__(self, cfg, sim_params, physics_engine, sim_device, headless):
         
-        self.acquire_gym_with_retry()
-
         self.sim_params = sim_params
         self.physics_engine = physics_engine
         self.sim_device = sim_device
@@ -84,13 +80,13 @@ class BaseTask():
 
         # create envs, sim and viewer
         self.create_sim()
-        self.gym.prepare_sim(self.sim)
 
         self.enable_viewer_sync = True
         self.viewer = None
 
         # if running with a viewer, set up keyboard shortcuts and camera
         if self.headless == False:
+            raise Exception("Porting to Isaac Lab was done with headless assumption")
             # subscribe to keyboard shortcuts
             self.viewer = self.gym.create_viewer(
                 self.sim, gymapi.CameraProperties())
@@ -122,20 +118,6 @@ class BaseTask():
         self.lookat_id = 0
         self.lookat_vec = torch.tensor([-0, 2, 1], requires_grad=False, device=self.device)
 
-    def acquire_gym_with_retry(self, max_attempts=60):
-        attempt = 0
-        while True:
-            try:
-                self.gym = gymapi.acquire_gym()
-                return
-            except RuntimeError as e:
-                print(f"Attempt {attempt} at acquiring gym")
-                attempt += 1
-                if attempt >= max_attempts:
-                    raise RuntimeError(f"Failed to acquire gym after {max_attempts} attempts") from e
-                delay = random.randint(10, 40)
-                time.sleep(delay)
-
     def get_observations(self):
         return self.obs_buf
     
@@ -161,6 +143,8 @@ class BaseTask():
         self.set_camera(cam_pos, look_at_pos)
 
     def render(self, sync_frame_time=True):
+        raise Exception("Did not port this method to Isaac Lab")
+        
         if self.viewer:
             # check for window closed
             if self.gym.query_viewer_has_closed(self.viewer):
