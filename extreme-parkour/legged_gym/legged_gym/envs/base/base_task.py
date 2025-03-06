@@ -59,10 +59,10 @@ class BaseTask():
         if self.headless == True:
             self.graphics_device_id = -1
 
-        self.num_envs = cfg.env.num_envs
-        self.num_obs = cfg.env.num_observations
+        self.num_envs = cfg.sim.num_envs
+        self.num_obs = cfg.observation_space
         self.num_privileged_obs = cfg.env.num_privileged_obs
-        self.num_actions = cfg.env.num_actions
+        self.num_actions = cfg.action_space
         
         # optimization flags for pytorch JIT
         torch._C._jit_set_profiling_mode(False)

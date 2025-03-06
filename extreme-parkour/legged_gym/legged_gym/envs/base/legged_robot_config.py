@@ -1,54 +1,77 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: BSD-3-Clause
-# 
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are met:
-#
-# 1. Redistributions of source code must retain the above copyright notice, this
-# list of conditions and the following disclaimer.
-#
-# 2. Redistributions in binary form must reproduce the above copyright notice,
-# this list of conditions and the following disclaimer in the documentation
-# and/or other materials provided with the distribution.
-#
-# 3. Neither the name of the copyright holder nor the names of its
-# contributors may be used to endorse or promote products derived from
-# this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Copyright (c) 2021 ETH Zurich, Nikita Rudin
+from isaaclab.utils.configclass import configclass
+from isaaclab.envs import DirectRLEnvCfg
+from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sim import SimulationCfg
 
-from legged_gym.envs.base.base_config import BaseConfig
-
-class LeggedRobotCfg(BaseConfig):
-    def __init__(self):
-        super().__init__()
+@configclass
+class LeggedRobotCfg(DirectRLEnvCfg):
+    def __post_init__(self):
+        """Initialize all member classes recursively"""
+        self._init_member_classes(self)
     
-    class env:
-        num_envs = 6144
+    @staticmethod
+    def _init_member_classes(obj):
+        import inspect
+        for key in dir(obj):
+            if key.startswith("__"):
+                continue
+            var = getattr(obj, key)
+            if inspect.isclass(var):
+                i_var = var()
+                setattr(obj, key, i_var)
+                LeggedRobotCfg._init_member_classes(i_var)
 
+    sim: SimulationCfg = SimulationCfg(
+        device = "cuda" # can be "cpu", "cuda", "cuda:<device_id>"
+        dt = 0.005,
+        # decimation will be set in the task config
+        # up axis will always be Z in isaac sim
+        # use_gpu_pipeline is deduced from the device
+        gravity=(0.0, 0.0, -9.81),
+        up_axis = 1,  # 0 is y, 1 is z
+        physx: PhysxCfg = PhysxCfg(
+            # num_threads is no longer needed
+            solver_type=1,
+            # use_gpu is deduced from the device
+            max_position_iteration_count=4,
+            max_velocity_iteration_count=0,
+            # moved to actor config
+            # moved to actor config
+            bounce_threshold_velocity=0.5,
+            # moved to actor config
+            # default_buffer_size_multiplier is no longer needed
+            gpu_max_rigid_contact_count=2**24,
+            # num_subscenes is no longer needed
+            # contact_collection is no longer needed
+            contact_offset = 0.01,  # [m]
+            rest_offset = 0.0,   # [m]
+            max_depenetration_velocity = 1.0,
+    )),
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(
+        num_envs = 6144,
+        env_spacing=3.0
+    ),
+
+    # REQUIRED TOP-LEVEL ENV ARGS
+    decimation = 1
+    episode_length_s = 20 # episode length in seconds
+    action_space = 12
+    observation_space = n_proprio + n_scan + history_len * n_proprio + n_priv_latent + n_priv
+    state_space = 0 # hopefully this is correct
+
+    class env:
         n_scan = 132                             # Scandots
         n_priv = 3 + 3 + 3                       # Privileged (explicit): base linear velocity
         n_priv_latent = 4 + 1 + 12 + 12          # Privileged (latent): mass, friction coefficients, motor strength (Kp and Kd factors, only used for control_type = "P")
         n_proprio = 3 + 2 + 2 + 1 + 24 + 12 + 4  # Proprioceptive: base angular velocity, roll & pitch (imu), delta yaw to curent goal & next goal, velocity command, joint positions & velocities, previous actions, foot contacts
         history_len = 10
 
-        num_observations = n_proprio + n_scan + history_len * n_proprio + n_priv_latent + n_priv
+        # num_observations = n_proprio + n_scan + history_len * n_proprio + n_priv_latent + n_priv
         num_privileged_obs = None # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise 
-        num_actions = 12
+        # num_actions = 12
         env_spacing = 3.  # not used with heightfields/trimeshes 
         send_timeouts = True # send time out information to the algorithm
-        episode_length_s = 20 # episode length in seconds
+        # episode_length_s = 20 # episode length in seconds
         
         history_encoding = True
         reorder_dofs = True
@@ -366,24 +389,6 @@ class LeggedRobotCfg(BaseConfig):
         pos = [10, 0, 6]  # [m]
         lookat = [11., 5, 3.]  # [m]
 
-    class sim:
-        dt = 0.005
-        substeps = 1
-        gravity = [0., 0. ,-9.81]  # [m/s^2]
-        up_axis = 1  # 0 is y, 1 is z
-
-        class physx:
-            num_threads = 10
-            solver_type = 1  # 0: pgs, 1: tgs
-            num_position_iterations = 4
-            num_velocity_iterations = 0
-            contact_offset = 0.01  # [m]
-            rest_offset = 0.0   # [m]
-            bounce_threshold_velocity = 0.5 #0.5 [m/s]
-            max_depenetration_velocity = 1.0
-            max_gpu_contact_pairs = 2**24 # needed for 8000 envs and more
-            default_buffer_size_multiplier = 5
-            contact_collection = 2 # 0: never, 1: last sub-step, 2: all sub-steps (default=2)
 
 class LeggedRobotCfgPPO(BaseConfig):
     seed = 1

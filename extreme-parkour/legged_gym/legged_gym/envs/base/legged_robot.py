@@ -737,7 +737,7 @@ class LeggedRobot(BaseTask):
         if self.cfg.terrain.type == "original" or self.cfg.terrain.type == "original_distill":
             # Distance-based curriculum, used with original terrain
             dis_to_origin = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
-            threshold = self.commands[env_ids, 0] * self.cfg.env.episode_length_s
+            threshold = self.commands[env_ids, 0] * self.cfg.episode_length_s
             move_up = dis_to_origin > 0.8*threshold
             move_down = dis_to_origin < 0.4*threshold
         else:
@@ -1181,7 +1181,7 @@ class LeggedRobot(BaseTask):
             self.command_ranges = class_to_dict(self.cfg.commands.ranges)
         if self.cfg.terrain.mesh_type not in ['heightfield', 'trimesh']:
             self.cfg.terrain.curriculum = False
-        self.max_episode_length_s = self.cfg.env.episode_length_s
+        self.max_episode_length_s = self.cfg.episode_length_s
         self.max_episode_length = np.ceil(self.max_episode_length_s / self.dt)
 
         self.cfg.domain_rand.push_interval = np.ceil(self.cfg.domain_rand.push_interval_s / self.dt)

@@ -72,8 +72,8 @@ def evaluate(args):
         _, train_cfg = task_registry.get_cfgs(name=args.task)
     
     # If number of environments is too small, increase it to fill up each grid cell (relevant for distillation)
-    env_cfg.env.num_envs = max(env_cfg.env.num_envs, env_cfg.terrain.num_rows * env_cfg.terrain.num_cols)
-    env_cfg.depth.camera_num_envs = env_cfg.env.num_envs
+    env_cfg.num_envs = max(env_cfg.num_envs, env_cfg.terrain.num_rows * env_cfg.terrain.num_cols)
+    env_cfg.depth.camera_num_envs = env_cfg.num_envs
     
     # Don't resample commands during an episode
     env_cfg.commands.resampling_time = 20
@@ -119,16 +119,16 @@ def evaluate(args):
     total_steps = args.max_steps if (args.max_steps is not None and args.max_steps > 0) else 10 * int(env.max_episode_length)
 
     # Buffers for metric tracking
-    rew_sum_per_env = torch.zeros(env.num_envs, dtype=torch.float, device=env.device)
-    rew_terms_sum_per_env = {term: torch.zeros(env.num_envs, dtype=torch.float, device=env.device) for term in env.rew_term_sums.keys()}
-    len_sum_per_env = torch.zeros(env.num_envs, dtype=torch.float, device=env.device)
-    goals_sum_per_env = torch.zeros(env.num_envs, dtype=torch.float, device=env.device)
-    sum_counter_per_env = torch.zeros(env.num_envs, dtype=torch.float, device=env.device)
-    edge_violation_sum_per_env = torch.zeros(env.num_envs, dtype=torch.float, device=env.device)
+    rew_sum_per_env = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
+    rew_terms_sum_per_env = {term: torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device) for term in env.rew_term_sums.keys()}
+    len_sum_per_env = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
+    goals_sum_per_env = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
+    sum_counter_per_env = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
+    edge_violation_sum_per_env = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
 
-    # cur_rew_sum = torch.zeros(env.num_envs, dtype=torch.float, device=env.device)
-    cur_episode_length = torch.zeros(env.num_envs, dtype=torch.float, device=env.device)
-    cur_time_from_start = torch.zeros(env.num_envs, dtype=torch.float, device=env.device)
+    # cur_rew_sum = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
+    cur_episode_length = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
+    cur_time_from_start = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
 
     if args.web:
         web_viewer.setup(env)
@@ -155,7 +155,7 @@ def evaluate(args):
             policy = ppo_runner.get_inference_policy(device=env.device)
     checkpoint_name = checkpoint.replace(".pt", "").replace("_", "-")
 
-    actions = torch.zeros(env.num_envs, 12, device=env.device, requires_grad=False)
+    actions = torch.zeros(env_cfg.num_envs, 12, device=env.device, requires_grad=False)
     if env_cfg.depth.use_camera:
         infos = {
             "depth": env.depth_buffer.clone().cuda()[:, -1]
