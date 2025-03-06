@@ -1,7 +1,9 @@
 import os
 import numpy as np
+from numpy.random import choice
+from scipy import interpolate
+from math import sqrt
 import random
-from isaacgym import terrain_utils
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg
 from pydelatin import Delatin
 import pyfqmr
@@ -26,6 +28,15 @@ from legged_gym.utils.set_terrain_real import set_terrain as set_terrain_real
 # Override default set_terrain.py with a custom path
 set_terrain_override = None
 # set_terrain_override = "/home/exx/Projects/eurekaverse/eurekaverse/outputs/eurekaverse/2024-05-26_22-32-38/terrain_iter-4_run-3.py"
+
+class SubTerrain:
+    def __init__(self, terrain_name="terrain", width=256, length=256, vertical_scale=1.0, horizontal_scale=1.0):
+        self.terrain_name = terrain_name
+        self.vertical_scale = vertical_scale
+        self.horizontal_scale = horizontal_scale
+        self.width = width
+        self.length = length
+        self.height_field_raw = np.zeros((self.width, self.length), dtype=np.int16)
 
 def load_terrain_function_from_file(filepath):
     spec = importlib.util.spec_from_file_location("module_name", filepath)
@@ -118,6 +129,9 @@ class Terrain:
             else:
                 assert cfg.hf2mesh_method == "fast", "Height field to mesh method must be grid or fast"
                 self.vertices, self.triangles = convert_heightfield_to_trimesh_delatin(self.height_field_raw, self.cfg.horizontal_scale, self.cfg.vertical_scale, max_error=cfg.max_error)
+            
+            self.save_trimesh()
+
             print("Created {} vertices".format(self.vertices.shape[0]))
             print("Created {} triangles".format(self.triangles.shape[0]))
 
@@ -126,7 +140,7 @@ class Terrain:
         # NOTE: The seed will be reset back to env_cfg.seed after the environment is created, inside TaskRegistry.make_env()
         set_seed(int(variation * 1e3 + difficulty * 1e6))
         # NOTE: Width and length are swapped in the terrain_utils.SubTerrain, careful!
-        terrain = terrain_utils.SubTerrain(
+        terrain = SubTerrain(
             "terrain",
             width=self.length_per_env_pixels,
             length=self.width_per_env_pixels,
@@ -182,7 +196,7 @@ class Terrain:
         # Add roughness to terrain
         max_height = (self.cfg.height[1] - self.cfg.height[0]) * 0.5 + self.cfg.height[0]
         height = random.uniform(self.cfg.height[0], max_height)
-        terrain_utils.random_uniform_terrain(terrain, min_height=-height, max_height=height, step=0.005, downsampled_scale=self.cfg.downsampled_scale)
+        random_uniform_terrain(terrain, min_height=-height, max_height=height, step=0.005, downsampled_scale=self.cfg.downsampled_scale)
 
         return terrain
 
@@ -209,6 +223,12 @@ class Terrain:
         self.env_origins[i, j] = [env_origin_x, env_origin_y, env_origin_z]
         self.terrain_type[i, j] = terrain.idx
         self.goals[i, j, :, :2] = terrain.goals + [i * self.env_length, j * self.env_width]
+
+    def save_trimesh(self):
+        """
+        Save trimesh to a USD file so it can be loaded with the Isaac Lab TerrainImporter
+        """
+        pass
     
 def fix_terrain(terrain):
     """Fix common errors with GPT-generated terrains"""
@@ -433,3 +453,40 @@ def convert_heightfield_to_trimesh(height_field_raw, horizontal_scale, vertical_
         triangles[start+1:stop:2, 2] = ind3
 
     return vertices, triangles, move_x != 0
+
+def random_uniform_terrain(terrain, min_height, max_height, step=1, downsampled_scale=None,):
+    """
+    Generate a uniform noise terrain
+
+    Parameters
+        terrain (SubTerrain): the terrain
+        min_height (float): the minimum height of the terrain [meters]
+        max_height (float): the maximum height of the terrain [meters]
+        step (float): minimum height change between two points [meters]
+        downsampled_scale (float): distance between two randomly sampled points ( musty be larger or equal to terrain.horizontal_scale)
+
+    """
+    if downsampled_scale is None:
+        downsampled_scale = terrain.horizontal_scale
+
+    # switch parameters to discrete units
+    min_height = int(min_height / terrain.vertical_scale)
+    max_height = int(max_height / terrain.vertical_scale)
+    step = int(step / terrain.vertical_scale)
+
+    heights_range = np.arange(min_height, max_height + step, step)
+    height_field_downsampled = np.random.choice(heights_range, (int(terrain.width * terrain.horizontal_scale / downsampled_scale), int(
+        terrain.length * terrain.horizontal_scale / downsampled_scale)))
+
+    x = np.linspace(0, terrain.width * terrain.horizontal_scale, height_field_downsampled.shape[0])
+    y = np.linspace(0, terrain.length * terrain.horizontal_scale, height_field_downsampled.shape[1])
+
+    f = interpolate.interp2d(y, x, height_field_downsampled, kind='linear')
+
+    x_upsampled = np.linspace(0, terrain.width * terrain.horizontal_scale, terrain.width)
+    y_upsampled = np.linspace(0, terrain.length * terrain.horizontal_scale, terrain.length)
+    z_upsampled = np.rint(f(y_upsampled, x_upsampled))
+
+    terrain.height_field_raw += z_upsampled.astype(np.int16)
+    return terrain
+

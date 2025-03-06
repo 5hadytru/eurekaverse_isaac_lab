@@ -34,8 +34,7 @@ from warnings import WarningMessage
 import numpy as np
 import os
 
-from isaacgym.torch_utils import *
-from isaacgym import gymtorch, gymapi, gymutil
+from isaaclab.envs import DirectRLEnv
 
 import torch, torchvision
 from torch import Tensor
@@ -75,27 +74,47 @@ def euler_from_quaternion(quat_angle):
     
     return roll_x, pitch_y, yaw_z # in radians
 
-class LeggedRobot(BaseTask):
-    def __init__(self, cfg: LeggedRobotCfg, sim_params, physics_engine, sim_device, headless):
-        """ Parses the provided config file,
-            calls create_sim() (which creates, simulation, terrain and environments),
-            initilizes pytorch buffers used during training
-
-        Args:
-            cfg (Dict): Environment config file
-            sim_params (gymapi.SimParams): simulation parameters
-            physics_engine (gymapi.SimType): gymapi.SIM_PHYSX (must be PhysX)
-            device_type (string): 'cuda' or 'cpu'
-            device_id (int): 0, 1, ...
-            headless (bool): Run without rendering if True
-        """
+class LeggedRobot(DirectRLEnv):
+    cfg: LeggedRobotCfg
+    def __init__(self, cfg: LeggedRobotCfg, render_mode: str):
+        super().__init__(self.cfg, render_mode)
+        
         self.cfg = cfg
-        self.sim_params = sim_params
         self.height_samples = None
         self.debug_viz = True
         self.init_done = False
         self._parse_cfg(self.cfg)
-        super().__init__(self.cfg, sim_params, physics_engine, sim_device, headless)
+
+        self.num_envs = cfg.sim.num_envs
+        self.num_obs = cfg.observation_space
+        self.num_privileged_obs = cfg.env.num_privileged_obs
+        self.num_actions = cfg.action_space
+
+        # optimization flags for pytorch JIT
+        torch._C._jit_set_profiling_mode(False)
+        torch._C._jit_set_profiling_executor(False)
+
+        # allocate buffers
+        self.obs_buf = torch.zeros(self.num_envs, self.num_obs, device=self.device, dtype=torch.float)
+        self.rew_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.float)
+        self.reset_buf = torch.ones(self.num_envs, device=self.device, dtype=torch.long)
+        self.episode_length_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.long)
+        self.time_out_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+        if self.num_privileged_obs is not None:
+            self.privileged_obs_buf = torch.zeros(self.num_envs, self.num_privileged_obs, device=self.device, dtype=torch.float)
+        else: 
+            self.privileged_obs_buf = None
+            # self.num_privileged_obs = self.num_obs
+
+        self.extras = {}
+
+        self.enable_viewer_sync = True
+        self.viewer = None
+
+        self.free_cam = False
+        self.command_control = False
+        self.lookat_id = 0
+        self.lookat_vec = torch.tensor([-0, 2, 1], requires_grad=False, device=self.device)
 
         self.resize_transform = torchvision.transforms.Resize((self.cfg.depth.processed_resolution[1], self.cfg.depth.processed_resolution[0]), 
                                                               interpolation=torchvision.transforms.InterpolationMode.BICUBIC)
@@ -485,6 +504,9 @@ class LeggedRobot(BaseTask):
         start = time()
         print("*"*80)
         print("Start creating ground...")
+
+        assert mesh_type == "trimesh", "Did not port any other mesh types to Lab"
+
         if mesh_type in ['heightfield', 'trimesh']:
             self.terrain = Terrain(self.cfg.terrain, self.num_envs)
         if mesh_type=='plane':
