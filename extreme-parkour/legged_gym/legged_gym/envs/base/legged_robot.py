@@ -35,6 +35,8 @@ import numpy as np
 import os
 
 from isaaclab.envs import DirectRLEnv
+from isaaclab.terrains import TerrainImporter, TerrainImporterCfg
+from isaaclab.sim.utils import sim_utils
 
 import torch, torchvision
 from torch import Tensor
@@ -493,19 +495,16 @@ class LeggedRobot(DirectRLEnv):
             x = x + (2.0 * torch.rand_like(x) - 1) * scale * self.cfg.noise.noise_level
         return x
 
-    def create_sim(self):
+    def _setup_scene(self):
         """ Creates simulation, terrain and evironments
         """
         self.up_axis_idx = 2 # 2 for z, 1 for y -> adapt gravity accordingly
-        if self.cfg.depth.use_camera or self.cfg.env.render_envs:
-            self.graphics_device_id = self.sim_device_id  # required in headless mode
-        self.sim = self.gym.create_sim(self.sim_device_id, self.graphics_device_id, self.physics_engine, self.sim_params)
         mesh_type = self.cfg.terrain.mesh_type
         start = time()
         print("*"*80)
         print("Start creating ground...")
 
-        assert mesh_type == "trimesh", "Did not port any other mesh types to Lab"
+        assert mesh_type == "trimesh", "Did not port any other mesh types to Isaac Lab"
 
         if mesh_type in ['heightfield', 'trimesh']:
             self.terrain = Terrain(self.cfg.terrain, self.num_envs)
@@ -519,6 +518,7 @@ class LeggedRobot(DirectRLEnv):
             raise ValueError("Terrain mesh type not recognised. Allowed types are [None, plane, heightfield, trimesh]")
         print("Finished creating ground. Time taken {:.2f} s".format(time() - start))
         print("*"*80)
+
         self._create_envs()
 
     def set_camera(self, position, lookat):
@@ -951,18 +951,29 @@ class LeggedRobot(DirectRLEnv):
         """ Adds a triangle mesh terrain to the simulation, sets parameters based on the cfg.
             Very slow when horizontal_scale is small
         """
-        tm_params = gymapi.TriangleMeshParams()
-        tm_params.nb_vertices = self.terrain.vertices.shape[0]
-        tm_params.nb_triangles = self.terrain.triangles.shape[0]
-
-        tm_params.transform.p.x = -self.terrain.cfg.border_size 
-        tm_params.transform.p.y = -self.terrain.cfg.border_size
-        tm_params.transform.p.z = 0.0
-        tm_params.static_friction = self.cfg.terrain.static_friction
-        tm_params.dynamic_friction = self.cfg.terrain.dynamic_friction
-        tm_params.restitution = self.cfg.terrain.restitution
         print("Adding trimesh to simulation...")
-        self.gym.add_triangle_mesh(self.sim, self.terrain.vertices.flatten(order='C'), self.terrain.triangles.flatten(order='C'), tm_params)  
+
+        terrain_cfg = TerrainImporterCfg(
+            prim_path="/World/Terrain",
+            usd_path=self.terrain.usd_file_path,
+            terrain_type="usd",
+            collision_group=-1,
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                static_friction=self.cfg.terrain.static_friction,
+                dynamic_friction=self.cfg.terrain.dynamic_friction,
+                restitution=self.cfg.terrain.restitution,
+                friction_combine_mode="multiply",
+                restitution_combine_mode="average"
+            ),
+            visual_material=sim_utils.PreviewSurfaceCfg(
+                diffuse_color=(0.2, 0.3, 0.4)
+            )
+        )
+
+        terrain_importer = TerrainImporter(terrain_cfg) 
+        self._get_env_origins()
+        terrain_importer.env_origins = self.env_origins
+
         print("Trimesh added")
         self.height_samples = torch.tensor(self.terrain.heightsamples).view(self.terrain.tot_rows, self.terrain.tot_cols).to(self.device)
         self.x_edge_mask = torch.tensor(self.terrain.x_edge_mask).view(self.terrain.tot_rows, self.terrain.tot_cols).to(self.device)
@@ -1049,7 +1060,6 @@ class LeggedRobot(DirectRLEnv):
         start_pose = gymapi.Transform()
         start_pose.p = gymapi.Vec3(*self.base_init_state[:3])
 
-        self._get_env_origins()
         env_lower = gymapi.Vec3(0., 0., 0.)
         env_upper = gymapi.Vec3(0., 0., 0.)
         self.actor_handles = []

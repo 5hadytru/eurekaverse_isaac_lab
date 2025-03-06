@@ -63,3 +63,4 @@ data
 evaluate
 debug
 legged_gym/envs/base_old/
+usd_files/

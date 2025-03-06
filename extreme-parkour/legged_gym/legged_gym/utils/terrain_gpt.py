@@ -9,8 +9,11 @@ from pydelatin import Delatin
 import pyfqmr
 from scipy.ndimage import binary_dilation
 import inspect
+import uuid
 import importlib.util
 from legged_gym.utils.helpers import set_seed
+from pxr import Usd, UsdGeom, Gf
+from datetime import datetime
 
 # This is the standard set_terrain
 from legged_gym import LEGGED_GYM_ROOT_DIR
@@ -225,10 +228,33 @@ class Terrain:
         self.goals[i, j, :, :2] = terrain.goals + [i * self.env_length, j * self.env_width]
 
     def save_trimesh(self):
-        """
-        Save trimesh to a USD file so it can be loaded with the Isaac Lab TerrainImporter
-        """
-        pass
+        """Save the generated trimesh to a USD file for use with Isaac Lab's TerrainImporter."""
+        self.usd_file_path = os.path.join(LEGGED_GYM_ROOT_DIR, "usd_files", "terrains", datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "_" + str(uuid.uuid4()) + ".usda")
+        stage = Usd.Stage.CreateNew(self.usd_file_path)
+        UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+        
+        # Create mesh prim
+        mesh_prim = stage.DefinePrim("/terrain", "Mesh")
+        usd_mesh = UsdGeom.Mesh(mesh_prim)
+        
+        # Configure geometry
+        usd_mesh.CreatePointsAttr([Gf.Vec3f(*v) for v in self.vertices])
+        usd_mesh.CreateFaceVertexCountsAttr([3]*len(self.triangles))
+        usd_mesh.CreateFaceVertexIndicesAttr(self.triangles.flatten().tolist())
+        
+        # Create physics material
+        material_path = "/Materials/TerrainMaterial"
+        material = UsdShade.Material.Define(stage, material_path)
+        physx_mat = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
+        physx_mat.CreateStaticFrictionAttr().Set(self.cfg.terrain.static_friction)
+        physx_mat.CreateDynamicFrictionAttr().Set(self.cfg.terrain.dynamic_friction) 
+        physx_mat.CreateRestitutionAttr().Set(self.cfg.terrain.restitution)
+        
+        # Bind material to mesh
+        UsdShade.MaterialBindingAPI(mesh_prim).Bind(material)
+        
+        stage.Save()
+        
     
 def fix_terrain(terrain):
     """Fix common errors with GPT-generated terrains"""
