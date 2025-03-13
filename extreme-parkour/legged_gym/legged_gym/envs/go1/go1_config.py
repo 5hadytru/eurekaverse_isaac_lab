@@ -30,48 +30,61 @@
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
+
+GO1_ACTUATOR_CFG = ActuatorNetMLPCfg(
+    joint_names_expr=[".*_hip_joint", ".*_thigh_joint", ".*_calf_joint"],
+    network_file=f"{ISAACLAB_NUCLEUS_DIR}/ActuatorNets/Unitree/unitree_go1.pt",
+    pos_scale=-1.0,
+    vel_scale=1.0,
+    torque_scale=1.0,
+    input_order="pos_vel",
+    input_idx=[0, 1, 2],
+    effort_limit=23.7,  # taken from spec sheet
+    velocity_limit=30.0,  # taken from spec sheet
+    saturation_effort=23.7,  # same as effort limit
+)
+
+UNITREE_GO1_CFG = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/Go1/go1.usd",
+        activate_contact_sensors=True,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            retain_accelerations=False,
+            linear_damping=0.0,
+            angular_damping=0.0,
+            max_linear_velocity=1000.0,
+            max_angular_velocity=1000.0,
+            max_depenetration_velocity=1.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False, solver_position_iteration_count=4, solver_velocity_iteration_count=0
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.4),
+        joint_pos={
+            ".*L_hip_joint": 0.1,
+            ".*R_hip_joint": -0.1,
+            "F[L,R]_thigh_joint": 0.8,
+            "R[L,R]_thigh_joint": 1.0,
+            ".*_calf_joint": -1.5,
+        },
+        joint_vel={".*": 0.0},
+    ),
+    soft_joint_pos_limit_factor=0.9,
+    actuators={
+        "base_legs": GO1_ACTUATOR_CFG,
+    },
+)
+
+# inherits then overrides some members of LeggedRobotCfg
 class Go1RoughCfg( LeggedRobotCfg ):
     def __init__(self):
         super().__init__()
-
-    class init_state( LeggedRobotCfg.init_state ):
-        pos = [0.0, 0.0, 0.42] # x,y,z [m]
-        default_joint_angles = { # = target angles [rad] when action = 0.0
-            'FL_hip_joint': 0.1,   # [rad]
-            'RL_hip_joint': 0.1,   # [rad]
-            'FR_hip_joint': -0.1 ,  # [rad]
-            'RR_hip_joint': -0.1,   # [rad]
-
-            'FL_thigh_joint': 0.8,     # [rad]
-            'RL_thigh_joint': 1.,   # [rad]
-            'FR_thigh_joint': 0.8,     # [rad]
-            'RR_thigh_joint': 1.,   # [rad]
-
-            'FL_calf_joint': -1.5,   # [rad]
-            'RL_calf_joint': -1.5,    # [rad]
-            'FR_calf_joint': -1.5,  # [rad]
-            'RR_calf_joint': -1.5,    # [rad]
-        }
-
-    class init_state_slope( LeggedRobotCfg.init_state ):
-        pos = [0.56, 0.0, 0.24] # x,y,z [m]
-        default_joint_angles = { # = target angles [rad] when action = 0.0
-            'FL_hip_joint': 0.03,   # [rad]
-            'RL_hip_joint': 0.03,   # [rad]
-            'FR_hip_joint': -0.03,  # [rad]
-            'RR_hip_joint': -0.03,   # [rad]
-
-            'FL_thigh_joint': 1.0,     # [rad]
-            'RL_thigh_joint': 1.9,   # [rad]1.8
-            'FR_thigh_joint': 1.0,     # [rad]
-            'RR_thigh_joint': 1.9,   # [rad]
-
-            'FL_calf_joint': -2.2,   # [rad]
-            'RL_calf_joint': -0.9,    # [rad]
-            'FR_calf_joint': -2.2,  # [rad]
-            'RR_calf_joint': -0.9,    # [rad]
-        }
         
+    robot = UNITREE_GO1_CFG
+
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
@@ -88,12 +101,10 @@ class Go1RoughCfg( LeggedRobotCfg ):
 
     class asset( LeggedRobotCfg.asset ):
         # Dribblebot (Gabe's) URDF
-        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/go1/urdf/go1_with_camera.urdf'
         flip_visual_attachments = False
 
         foot_name = "foot"
         penalize_contacts_on = ["thigh", "calf"]
-        terminate_after_contacts_on = ["base"]#, "thigh", "calf"]
         self_collisions = 1 # 1 to disable, 0 to enable...bitwise filter
 
         # Official dimensions, in meters

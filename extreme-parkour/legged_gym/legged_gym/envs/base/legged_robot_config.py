@@ -1,25 +1,52 @@
 from isaaclab.utils.configclass import configclass
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sensors import ContactSensorCfg
 from isaaclab.sim import SimulationCfg
+import isaaclab.sim as sim_utils
+from isaaclab.actuators import ActuatorNetMLPCfg, DCMotorCfg, ImplicitActuatorCfg
+from isaaclab.assets.articulation import ArticulationCfg
+from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
+
+
+@configclass
+class ContactSensorSceneCfg(InteractiveSceneCfg):
+    num_envs = 6144,
+    env_spacing=3.0
+
+    contact_forces_FOOT = ContactSensorCfg(
+        rim_path="{ENV_REGEX_NS}/Robot/.*_FOOT", update_period=0.0, history_length=1, debug_vis=True
+    )
+    contact_forces_THIGH = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/.*_THIGH", update_period=0.0, history_length=1, debug_vis=True
+    )
+    contact_forces_CALF = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/.*_CALF", update_period=0.0, history_length=1, debug_vis=True
+    )
+
 
 @configclass
 class LeggedRobotCfg(DirectRLEnvCfg):
-    def __post_init__(self):
-        """Initialize all member classes recursively"""
-        self._init_member_classes(self)
+    def __init__(self) -> None:
+        """ Initializes all member classes recursively. Ignores all namse starting with '__' (buit-in methods)."""
+        self.init_member_classes(self)
     
     @staticmethod
-    def _init_member_classes(obj):
-        import inspect
+    def init_member_classes(obj):
         for key in dir(obj):
             if key.startswith("__"):
                 continue
+
             var = getattr(obj, key)
+            # Convert class attribute to instance attribute
+            # This is necessary to properly save the values when pickling
+            setattr(obj, key, var)
+
             if inspect.isclass(var):
+                # If the attribute is a class, instantiate it and recurse
                 i_var = var()
                 setattr(obj, key, i_var)
-                LeggedRobotCfg._init_member_classes(i_var)
+                LeggedRobotCfg.init_member_classes(i_var)
 
     sim: SimulationCfg = SimulationCfg(
         device = "cuda" # can be "cpu", "cuda", "cuda:<device_id>"
@@ -47,16 +74,14 @@ class LeggedRobotCfg(DirectRLEnvCfg):
             rest_offset = 0.0,   # [m]
             max_depenetration_velocity = 1.0,
     )),
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(
-        num_envs = 6144,
-        env_spacing=3.0
-    ),
+
+    scene: InteractiveSceneCfg = ContactSensorSceneCfg(),
 
     # REQUIRED TOP-LEVEL ENV ARGS
-    decimation = 1
+    decimation = 4
     episode_length_s = 20 # episode length in seconds
     action_space = 12
-    observation_space = n_proprio + n_scan + history_len * n_proprio + n_priv_latent + n_priv
+    observation_space = 48 + 132 + 10 * 48 + 29 + 9 # n_proprio + n_scan + history_len * n_proprio + n_priv_latent + n_priv
     state_space = 0 # hopefully this is correct
 
     class env:
@@ -156,18 +181,6 @@ class LeggedRobotCfg(DirectRLEnvCfg):
             height_measurements = 5.0
         clip_observations = 100.
         clip_actions = 1.2
-    class noise:
-        add_noise = False
-        noise_level = 1.0 # scales other values
-        quantize_height = True
-        class noise_scales:
-            rotation = 0.0
-            dof_pos = 0.01
-            dof_vel = 0.05
-            lin_vel = 0.05
-            ang_vel = 0.05
-            gravity = 0.02
-            height_measurements = 0.02
 
     class terrain:
         type = "default"  # Which set_terrain() function to use
@@ -279,15 +292,6 @@ class LeggedRobotCfg(DirectRLEnvCfg):
 
         waypoint_delta = 0.7
 
-    class init_state:
-        pos = [0.0, 0.0, 1.] # x,y,z [m]
-        rot = [0.0, 0.0, 0.0, 1.0] # x,y,z,w [quat]
-        lin_vel = [0.0, 0.0, 0.0]  # x,y,z [m/s]
-        ang_vel = [0.0, 0.0, 0.0]  # x,y,z [rad/s]
-        default_joint_angles = { # target angles when action = 0.0
-            "joint_a": 0., 
-            "joint_b": 0.}
-
     class control:
         control_type = 'P' # P: position, V: velocity, T: torques
         # PD Drive parameters:
@@ -295,8 +299,6 @@ class LeggedRobotCfg(DirectRLEnvCfg):
         damping = {'joint_a': 1.0, 'joint_b': 1.5}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.5
-        # decimation: Number of control action updates @ sim DT per policy DT
-        decimation = 4
 
     class asset:
         file = ""

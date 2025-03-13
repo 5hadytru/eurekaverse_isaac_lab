@@ -62,5 +62,5 @@ __pycache__
 data
 evaluate
 debug
-legged_gym/envs/base_old/
+legged_gym/envs_old
 usd_files/
