@@ -63,4 +63,6 @@ data
 evaluate
 debug
 legged_gym/envs_old
+legged_gym/scripts/train_lab.py
+legged_gym/scripts_old
 usd_files/

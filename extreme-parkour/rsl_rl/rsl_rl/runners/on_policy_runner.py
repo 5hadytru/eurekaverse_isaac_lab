@@ -38,14 +38,13 @@ import wandb
 
 from rsl_rl.algorithms import PPO
 from rsl_rl.modules import *
-from rsl_rl.env import VecEnv
 from copy import copy, deepcopy
 import warnings
 
 class OnPolicyRunner: 
 
     def __init__(self,
-                 env: VecEnv,
+                 env,
                  train_cfg,
                  log_dir=None,
                  init_wandb=True,
@@ -62,16 +61,17 @@ class OnPolicyRunner:
         print("Using MLP and Priviliged Env encoder ActorCritic structure")
         actor_critic: ActorCriticRMA = ActorCriticRMA(self.env.cfg.env.n_proprio,
                                                       self.env.cfg.env.n_scan,
-                                                      self.env.num_obs,
+                                                      self.env.cfg.observation_space,
                                                       self.env.cfg.env.n_priv_latent,
                                                       self.env.cfg.env.n_priv,
                                                       self.env.cfg.env.history_len,
-                                                      self.env.num_actions,
+                                                      self.env.cfg.action_space,
                                                       **self.policy_cfg).to(self.device)
         estimator = Estimator(input_dim=env.cfg.env.n_proprio, output_dim=env.cfg.env.n_priv, hidden_dims=self.estimator_cfg["hidden_dims"]).to(self.device)
         # Depth encoder
         self.if_depth = self.depth_encoder_cfg["if_depth"]
         if self.if_depth:
+            raise NotImplementedError("Depth not ported to Lab")
             depth_backbone = DepthOnlyFCBackbone58x87(env.cfg.env.n_proprio, 
                                                     self.policy_cfg["scan_encoder_dims"][-1], 
                                                     self.depth_encoder_cfg["hidden_dims"],
@@ -99,9 +99,9 @@ class OnPolicyRunner:
         self.alg.init_storage(
             self.env.num_envs, 
             self.num_steps_per_env, 
-            [self.env.num_obs], 
-            [self.env.num_privileged_obs], 
-            [self.env.num_actions],
+            [self.env.cfg.observation_space], 
+            [self.env.cfg.n_priv], 
+            [self.env.cfg.action_space],
         )
 
         self.learn = self.learn_RL if not self.if_depth else self.learn_vision

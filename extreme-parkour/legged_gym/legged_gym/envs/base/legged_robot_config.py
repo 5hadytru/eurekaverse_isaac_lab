@@ -9,6 +9,63 @@ from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 
 
+GO1_ACTUATOR_CFG = ActuatorNetMLPCfg(
+    joint_names_expr=[".*_hip_joint", ".*_thigh_joint", ".*_calf_joint"],
+    network_file=f"{ISAACLAB_NUCLEUS_DIR}/ActuatorNets/Unitree/unitree_go1.pt",
+    pos_scale=-1.0,
+    vel_scale=1.0,
+    torque_scale=1.0,
+    input_order="pos_vel",
+    input_idx=[0, 1, 2],
+    effort_limit=23.7,  # taken from spec sheet
+    velocity_limit=30.0,  # taken from spec sheet
+    saturation_effort=23.7,  # same as effort limit
+)
+
+UNITREE_GO1_CFG = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/Go1/go1.usd",
+        activate_contact_sensors=True,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            retain_accelerations=False,
+            linear_damping=0.0,
+            angular_damping=0.0,
+            max_linear_velocity=1000.0,
+            max_angular_velocity=1000.0,
+            max_depenetration_velocity=1.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False, solver_position_iteration_count=4, solver_velocity_iteration_count=0
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.42),
+        joint_pos={ # = target angles [rad] when action = 0.0
+            'FL_hip_joint': 0.1,   # [rad]
+            'RL_hip_joint': 0.1,   # [rad]
+            'FR_hip_joint': -0.1 ,  # [rad]
+            'RR_hip_joint': -0.1,   # [rad]
+
+            'FL_thigh_joint': 0.8,     # [rad]
+            'RL_thigh_joint': 1.,   # [rad]
+            'FR_thigh_joint': 0.8,     # [rad]
+            'RR_thigh_joint': 1.,   # [rad]
+
+            'FL_calf_joint': -1.5,   # [rad]
+            'RL_calf_joint': -1.5,    # [rad]
+            'FR_calf_joint': -1.5,  # [rad]
+            'RR_calf_joint': -1.5,    # [rad]
+        },
+        joint_vel={".*": 0.0},
+    ),
+    soft_joint_pos_limit_factor=0.9,
+    actuators={
+        "base_legs": GO1_ACTUATOR_CFG,
+    },
+)
+
+
 @configclass
 class ContactSensorSceneCfg(InteractiveSceneCfg):
     num_envs = 6144,
@@ -55,7 +112,6 @@ class LeggedRobotCfg(DirectRLEnvCfg):
         # up axis will always be Z in isaac sim
         # use_gpu_pipeline is deduced from the device
         gravity=(0.0, 0.0, -9.81),
-        up_axis = 1,  # 0 is y, 1 is z
         physx: PhysxCfg = PhysxCfg(
             # num_threads is no longer needed
             solver_type=1,
@@ -75,9 +131,34 @@ class LeggedRobotCfg(DirectRLEnvCfg):
             max_depenetration_velocity = 1.0,
     )),
 
+    robot = UNITREE_GO1_CFG,
+
     scene: InteractiveSceneCfg = ContactSensorSceneCfg(),
 
+    terrain_importer_cfg: TerrainImporterCfg = TerrainImporterCfg(
+        prim_path=f"/World/Terrain",
+        usd_path=None, # this must be set before _setup_scene() is called (in DirectRLEnv __init__)
+        terrain_type="usd",
+        collision_group=-1,
+        # physics properties are specified in the USD file
+        # physics_material=sim_utils.RigidBodyMaterialCfg(
+        #     static_friction=self.cfg.terrain.static_friction,
+        #     dynamic_friction=self.cfg.terrain.dynamic_friction,
+        #     restitution=self.cfg.terrain.restitution,
+        #     friction_combine_mode="multiply",
+        #     restitution_combine_mode="average"
+        # ),
+        visual_material=sim_utils.PreviewSurfaceCfg(
+            diffuse_color=(0.2, 0.3, 0.4)
+        )
+    )
+
     # REQUIRED TOP-LEVEL ENV ARGS
+    # control decimation was manually applied in previous implementation; migration guide makes it confusing since
+    # the old implementation was not using IsaacGymEnvs, and instead was directly using gym
+    # old implementation nonetheless specified substeps=1 and dt=0.005, which means 0.005 remains our sim dt;
+    # however, the old implementation had decimation=4 in the "control" config, which was manually used in the 
+    # step() function. In Isaac Lab, we can hand decimation and dt to the simulator and it'll step properly for us.
     decimation = 4
     episode_length_s = 20 # episode length in seconds
     action_space = 12
@@ -117,8 +198,6 @@ class LeggedRobotCfg(DirectRLEnvCfg):
         next_goal_threshold = 0.2
         reach_goal_delay = 0.1
         num_future_goal_obs = 2
-
-        render_envs = False  # Set up cameras to render each env
 
     class depth:
         use_camera = False
@@ -293,12 +372,8 @@ class LeggedRobotCfg(DirectRLEnvCfg):
         waypoint_delta = 0.7
 
     class control:
-        control_type = 'P' # P: position, V: velocity, T: torques
-        # PD Drive parameters:
-        stiffness = {'joint_a': 10.0, 'joint_b': 15.}  # [N*m/rad]
-        damping = {'joint_a': 1.0, 'joint_b': 1.5}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
-        action_scale = 0.5
+        action_scale = 0.25
 
     class asset:
         file = ""
@@ -323,16 +398,16 @@ class LeggedRobotCfg(DirectRLEnvCfg):
 
     class domain_rand:
         # Original values from Extreme Parkour
-        randomize_friction = True
+        randomize_friction = False
         friction_range = [0.6, 2.]
-        randomize_base_mass = True
+        randomize_base_mass = False
         added_mass_range = [0., 3.]
-        randomize_base_com = True
+        randomize_base_com = False
         added_com_range = [-0.2, 0.2]
         push_robots = True
         push_interval_s = 8
         max_push_vel_xy = 0.5
-        randomize_motor = True
+        randomize_motor = False
         motor_strength_range = [0.8, 1.2]
 
         # Inspired by Robot Parkour Learning
@@ -347,7 +422,7 @@ class LeggedRobotCfg(DirectRLEnvCfg):
         # max_push_vel_xy = 0.5
         # randomize_motor = True
         # motor_strength_range = [0.9, 1.1]
-        
+
         action_delay = False                          # Enable action delay
         delay_update_global_steps = 24 * 5000         # How many steps until we update delay to the next element in action_delay_steps
         # action_delay_steps = [0.5]                      # Action delays (in steps) to apply, training starts with first element and moves to the next every delay_update_global_steps
@@ -357,6 +432,7 @@ class LeggedRobotCfg(DirectRLEnvCfg):
         # action_delay_steps = [2]                      # Action delays (in steps) to apply, training starts with first element and moves to the next every delay_update_global_steps
         action_buf_len = int(max(action_delay_steps) * 4) + 1  # (Multiply by 4 to account for decimation, since buffer is updated during compute_torques())
         
+
     class rewards:
         class scales:
             # tracking rewards
@@ -377,6 +453,9 @@ class LeggedRobotCfg(DirectRLEnvCfg):
             feet_stumble = -1
             feet_edge = -1
             
+        soft_dof_pos_limit = 0.9
+        base_height_target = 0.25
+
         only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 0.2 # tracking reward = exp(-error^2/sigma)
         soft_dof_pos_limit = 1. # percentage of urdf limits, values above this limit are penalized

@@ -12,7 +12,6 @@ import random  # This is used by set_terrain in compute_terrain_stats()
 from eurekaverse.utils.misc_utils import suppress_output
 
 with suppress_output():
-    from isaacgym import terrain_utils
     from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg
     from legged_gym.utils import set_seed
     from legged_gym.utils.terrain_gpt import fix_terrain, calc_direct_path_heights
@@ -26,6 +25,15 @@ if not terrain_file_dir.exists():
 # NOTE: This regex pattern assumes that everything between two "def" statements is part of a function
 #       This does not always hold true if there is un-indented code between functions, but we filter these out in query_gpt()
 function_pattern = r"(^def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\((.*?)\):([\S\s]+?))(?=^def|\Z)"
+
+class SubTerrain:
+    def __init__(self, terrain_name="terrain", width=256, length=256, vertical_scale=1.0, horizontal_scale=1.0):
+        self.terrain_name = terrain_name
+        self.vertical_scale = vertical_scale
+        self.horizontal_scale = horizontal_scale
+        self.width = width
+        self.length = length
+        self.height_field_raw = np.zeros((self.width, self.length), dtype=np.int16)
 
 def get_terrain(terrain_filename):
     with open(terrain_file_dir / (terrain_filename + ".py"), "r") as f:
@@ -155,7 +163,7 @@ def compute_terrain_stats(terrain_fn_string):
             difficulty = i / (cfg.num_rows-1) if cfg.num_rows > 1 else 0.5
             variation = j / cfg.num_cols
             set_seed(int(variation * 1e3 + difficulty * 1e6))
-            terrain = terrain_utils.SubTerrain(
+            terrain = SubTerrain(
                 "terrain",
                 width=length_per_env_pixels,
                 length=width_per_env_pixels,

@@ -33,8 +33,6 @@ import copy
 import torch
 import numpy as np
 import random
-from isaacgym import gymapi
-from isaacgym import gymutil
 import argparse
 
 def class_to_dict(obj) -> dict:
@@ -84,50 +82,12 @@ def get_checkpoint(load_dir, checkpoint=-1, model_name_include="model"):
         model = f"model_{checkpoint}.pt"
     return model
 
-def parse_sim_params(args, cfg):
-    # code from Isaac Gym Preview 2
-    # initialize sim params
-    sim_params = gymapi.SimParams()
-
-    # set some values from args
-    if args.physics_engine == gymapi.SIM_FLEX:
-        if args.device != "cpu":
-            print("WARNING: Using Flex with GPU instead of PHYSX!")
-    elif args.physics_engine == gymapi.SIM_PHYSX:
-        sim_params.physx.use_gpu = (args.sim_device_type == 'cuda')
-        sim_params.physx.num_subscenes = args.subscenes
-    sim_params.use_gpu_pipeline = (args.pipeline == "gpu")
-
-    # if sim options are provided in cfg, parse them and update/override above:
-    if "sim" in cfg:
-        gymutil.parse_sim_config(cfg["sim"], sim_params)
-
-    # Override num_threads if passed on the command line
-    if args.physics_engine == gymapi.SIM_PHYSX and args.num_threads > 0:
-        sim_params.physx.num_threads = args.num_threads
-
-    return sim_params
 
 def update_cfg_from_args(env_cfg, cfg_train, args):
     # seed
     if env_cfg is not None:
-        if args.use_camera:
-            env_cfg.depth.use_camera = args.use_camera
-        if env_cfg.depth.use_camera and args.headless:  # set camera specific parameters
-            env_cfg.num_envs = env_cfg.depth.camera_num_envs
-            env_cfg.terrain.num_rows = env_cfg.depth.camera_terrain_num_rows
-            env_cfg.terrain.num_cols = env_cfg.depth.camera_terrain_num_cols
-            env_cfg.terrain.max_error = env_cfg.terrain.max_error_camera
-            env_cfg.terrain.simplify_grid = True
-            env_cfg.terrain.terrain_dict["parkour_hurdle"] = 0.2
-            env_cfg.terrain.terrain_dict["parkour_flat"] = 0.05
-            env_cfg.terrain.terrain_dict["parkour_gap"] = 0.2
-            env_cfg.terrain.terrain_dict["parkour_step"] = 0.2
-            env_cfg.terrain.terrain_dict["demo"] = 0.15
-            env_cfg.terrain.terrain_proportions = list(env_cfg.terrain.terrain_dict.values())
-        if env_cfg.depth.use_camera:
-            env_cfg.terrain.y_range = [-0.1, 0.1]
-
+        if args.device is not None:
+            env_cfg.sim.device = args.device
         if args.num_envs is not None:
             env_cfg.num_envs = args.num_envs
         if args.seed is not None:
@@ -136,22 +96,15 @@ def update_cfg_from_args(env_cfg, cfg_train, args):
             env_cfg.terrain.num_rows = args.terrain_rows
         if args.terrain_cols is not None:
             env_cfg.terrain.num_cols = args.terrain_cols
-        if args.action_delay is not None:
-            env_cfg.domain_rand.action_delay = args.action_delay
         if args.terrain_type is not None:
             env_cfg.terrain.type = args.terrain_type
         if args.check_terrain_feasibility:
             env_cfg.terrain.check_feasibility = True
         
-        if args.script == "train" and args.resume:
-            # If we're resuming training, assume we left off at the last action delay step
-            env_cfg.domain_rand.action_delay_steps = env_cfg.domain_rand.action_delay_steps[-1:]
     if cfg_train is not None and args.script == "train":
         if args.seed is not None:
             cfg_train.seed = args.seed
         # alg runner parameters
-        if args.use_camera:
-            cfg_train.depth_encoder.if_depth = args.use_camera
         if args.max_iterations is not None:
             cfg_train.runner.max_iterations = args.max_iterations
         if args.resume:
@@ -174,13 +127,6 @@ def add_sim_args(parser):
 
     # Devices and low-level specifics
     parser.add_argument("--device", type=str, default="cuda:0", help='Device for learning, simulation, and graphics (cpu, gpu, cuda:n)')
-    parser.add_argument("--rl_device", type=str, default="cuda:0", help='Device used for reinforcement learning')
-    parser.add_argument('--sim_device', type=str, default="cuda:0", help='Device used for physics simulation and graphics (if necessary)')
-    parser.add_argument('--pipeline', type=str, default="gpu", choices=['cpu', 'gpu'], help="Device for IsaacGym's Tensor API pipeline (cpu, gpu)")
-    parser.add_argument('--physics_engine', type=str, default='physx', help='Physics backend (physx, flex)')
-    parser.add_argument('--num_threads', type=int, default=0, help='Number of cores used by PhysX')
-    parser.add_argument('--subscenes', type=int, default=0, help='Number of PhysX subscenes to simulate in parallel')
-    parser.add_argument('--slices', type=int, help='Number of client threads that process env slices')
 
     # Weights and Biases tracking
     parser.add_argument("--use_wandb", action="store_true", default=False, help="Use wandb for logging")
@@ -188,9 +134,8 @@ def add_sim_args(parser):
     parser.add_argument("--wandb_group", type=str, help="Wandb group name, used to group runs")
 
 def add_agent_args(parser):
-    parser.add_argument("--task", type=str, default="go1", help="Which robot to use (a1 or go1)")
+    parser.add_argument("--task", type=str, default="go1", help="Which robot to use")
     parser.add_argument("--num_envs", type=int, help="Number of environments to create")
-    parser.add_argument("--action_delay", action="store_true", default=None, help="Add action delay to the agent")
     parser.add_argument("--use_camera", action="store_true", default=False, help="Render camera for distillation")
 
 def add_terrain_args(parser):
@@ -203,28 +148,6 @@ def add_shared_args(parser):
     add_sim_args(parser)
     add_agent_args(parser)
     add_terrain_args(parser)
-
-def process_args(args):
-    """Processing command line args for IsaacGym, loosely borrowed from gymutil.parse_arguments()"""
-    if args.device is not None:
-        args.sim_device = args.device
-        args.rl_device = args.device
-    args.sim_device_type, args.sim_device_id = gymutil.parse_device_str(args.sim_device)
-
-    if args.sim_device_type != 'cuda' and args.physics_backend == 'flex':
-        print("Can't use Flex with CPU. Changing sim device to 'cuda:0'")
-        args.sim_device = 'cuda:0'
-        args.sim_device_type, args.sim_device_id = gymutil.parse_device_str(args.sim_device)
-
-    if (args.sim_device_type != 'cuda' and args.pipeline == 'gpu'):
-        print("Can't use GPU pipeline with CPU Physics. Changing pipeline to 'cpu'.")
-        args.pipeline = 'cpu'
-
-    args.physics_engine = gymapi.SIM_PHYSX if args.physics_engine == 'physx' else gymapi.SIM_FLEX
-    args.slices = args.slices if args.slices is not None else args.subscenes
-    args.sim_device = args.sim_device if args.sim_device_type != 'cuda' else f"{args.sim_device_type}:{args.sim_device_id}"
-
-    return args
 
 def export_policy_as_jit(actor_critic, path, name):
     if hasattr(actor_critic, 'memory_a'):

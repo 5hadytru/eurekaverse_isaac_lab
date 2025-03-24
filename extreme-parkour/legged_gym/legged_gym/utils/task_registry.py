@@ -37,7 +37,7 @@ import numpy as np
 from pathlib import Path
 import pickle
 
-from rsl_rl.env import VecEnv
+from isaaclab.envs import DirectRLEnv
 from rsl_rl.runners import OnPolicyRunner
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
@@ -50,7 +50,7 @@ class TaskRegistry():
         self.env_cfgs = {}
         self.train_cfgs = {}
     
-    def register(self, name: str, task_class: VecEnv, env_cfg: LeggedRobotCfg, train_cfg: LeggedRobotCfgPPO):
+    def register(self, name: str, task_class: DirectRLEnv, env_cfg: LeggedRobotCfg, train_cfg: LeggedRobotCfgPPO):
         self.task_classes[name] = task_class
         self.env_cfgs[name] = env_cfg
         self.train_cfgs[name] = train_cfg
@@ -72,7 +72,7 @@ class TaskRegistry():
             cfgs = pickle.load(f)
         return cfgs
     
-    def make_env(self, name, args, env_cfg=None) -> Tuple[VecEnv, LeggedRobotCfg]:
+    def make_env(self, name, args, render_mode, env_cfg=None) -> Tuple[VecEnv, LeggedRobotCfg]:
         """ Creates an environment either from a registered namme or from the provided config file.
 
         Args:
@@ -98,18 +98,13 @@ class TaskRegistry():
         # override cfg from args (if specified)
         env_cfg, _ = update_cfg_from_args(env_cfg, None, args)
         set_seed(env_cfg.seed)
-        # parse sim params (convert to dict first)
-        sim_params = {"sim": class_to_dict(env_cfg.sim)}
-        sim_params = parse_sim_params(args, sim_params)
         env = task_class(
             cfg=env_cfg,
-            sim_params=sim_params,
-            physics_engine=args.physics_engine,
-            sim_device=args.sim_device,
-            headless=args.headless
+            render_mode=render_mode
         )
         # set_seed() might be used deterministically during env creation, reset it here to make execution different for different env_cfg.seed
         set_seed(env_cfg.seed)  
+
         return env, env_cfg
 
     def make_alg_runner(self, env, args, name=None, train_cfg=None, init_wandb=True, log_root="", **kwargs) -> Tuple[OnPolicyRunner, LeggedRobotCfgPPO]:

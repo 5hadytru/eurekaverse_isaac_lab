@@ -35,7 +35,6 @@ import argparse
 import cv2
 from pathlib import Path
 import numpy as np
-import isaacgym
 import torch
 import cv2
 from collections import deque
@@ -48,12 +47,46 @@ import copy
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.envs import *
-from legged_gym.utils import task_registry, add_shared_args, process_args, webviewer
+from legged_gym.utils import task_registry, add_shared_args
 from legged_gym.utils.helpers import get_checkpoint
 
+EXPORT_POLICY = False
+RECORD_FRAMES = False
+MOVE_CAMERA = False
+
+parser = argparse.ArgumentParser()
+add_shared_args(parser)
+
+parser.add_argument("--checkpoint", type=int, default=-1, help="Which model checkpoint to load. If -1, will load the last checkpoint.")
+parser.add_argument("--max_steps", type=int, help="Maximum number of evaluation steps")
+parser.add_argument("--use_jit", action="store_true", default=False, help="Load jit script when playing")
+parser.add_argument("--metric_granularity", type=str, default="all", choices=["type", "level", "cell", "all"])
+parser.add_argument("--no_save", action="store_true", default=False, help="Do not save any evaluation results")
+parser.add_argument("--plot_cells", action="store_true", default=False, help="Plot evaluation results in new window")
+
+parser.add_argument("--replay_actions", action="store_true", default=False, help="Replay actions stored from deployment")
+parser.add_argument("--replay_depth", action="store_true", default=False, help="Replay depth stored from deployment")
+
+AppLauncher.add_app_launcher_args(parser)
+
+args = parser.parse_args()
+
+# if not args.headless:
+#     env_cfg, _ = task_registry.get_cfgs(name=args.task)
+#     # Setting up exactly one env per terrain grid cell
+#     if args.terrain_rows is None:
+#         print("Setting terrain_rows to 1 as default")
+#         args.terrain_rows = 1
+#     if args.terrain_cols is None:
+#         args.terrain_cols = env_cfg.terrain.num_cols
+#     if args.num_envs is None:
+#         args.num_envs = args.terrain_rows * args.terrain_cols
+
+args.script = "evaluate"
+app_launcher = AppLauncher(args_cli)
+simulation_app = app_launcher.app
+
 def evaluate(args):
-    if args.web:
-        web_viewer = webviewer.WebViewer()
     faulthandler.enable()
 
     load_dir = Path(LEGGED_GYM_ROOT_DIR) / "logs" / args.proj_name / args.exptid
@@ -78,8 +111,9 @@ def evaluate(args):
     # Don't resample commands during an episode
     env_cfg.commands.resampling_time = 20
     
-    # Disable some domain randomization (keeping friction on)
-    env_cfg.domain_rand.randomize_friction = True
+    # Disable some domain randomization (used to keep friction on)
+    # env_cfg.domain_rand.randomize_friction = True
+    env_cfg.domain_rand.randomize_friction = False
     env_cfg.domain_rand.push_robots = False
     env_cfg.domain_rand.randomize_base_mass = False
     env_cfg.domain_rand.randomize_base_com = False
@@ -93,27 +127,8 @@ def evaluate(args):
         env_cfg.commands.ranges.lin_vel_x[0] = 0
         env_cfg.commands.ranges.lin_vel_y[0] = 0
 
-    # rendering logic
-    if args.render_locally:
-        # assert not args.headless
-        env_cfg.env.render_envs = True
-        render_log_dir = Path(LEGGED_GYM_ROOT_DIR) / "logs" / args.proj_name / args.exptid / "eval_renders"
-        if render_log_dir is not None:
-            render_log_dir.mkdir(parents=True, exist_ok=True)
-
-        envs_to_render = list(range(10))
-        fps = 30
-        frame_width = 640
-        frame_height = 480
-        codec = cv2.VideoWriter_fourcc(*'mp4v')
-
-        video_writers = {}
-        for env_id in envs_to_render:
-            video_writers[env_id] = cv2.VideoWriter(os.path.join(render_log_dir, f"env_{env_id}.mp4"), codec, fps, (frame_width, frame_height))
-
     # prepare environment
-    env: LeggedRobot
-    env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
+    env, _ = task_registry.make_env(args=args, name=args.task, render_mode=None)
     obs = env.get_observations()
 
     total_steps = args.max_steps if (args.max_steps is not None and args.max_steps > 0) else 10 * int(env.max_episode_length)
@@ -130,9 +145,6 @@ def evaluate(args):
     cur_episode_length = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
     cur_time_from_start = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
 
-    if args.web:
-        web_viewer.setup(env)
-
     # Set up loading config
     train_cfg.runner.resume = True
     train_cfg.runner.load_run = args.exptid
@@ -145,9 +157,10 @@ def evaluate(args):
         # parkour_actor.load(load_dir)
         checkpoint = "jit"
     else:
-        ppo_runner, train_cfg, _, loaded_dir, checkpoint = task_registry.make_alg_runner(env=env, args=args, name=args.task, train_cfg=train_cfg, log_root=load_dir)
+        ppo_runner, train_cfg, _, loaded_dir, checkpoint = task_registry.make_alg_runner(env=env, args=args, name="go1", train_cfg=train_cfg, log_root=load_dir)
         assert load_dir == loaded_dir, f"Config loading directory {load_dir} is different from the runner loading directory {loaded_dir}!"
         if env.cfg.depth.use_camera:
+            raise NotImplementedError("Depth actor not ported to Lab")
             policy = ppo_runner.get_depth_actor_inference_policy(device=env.device)
             if env.cfg.depth.use_camera:
                 depth_encoder = ppo_runner.get_depth_encoder_inference_policy(device=env.device)
@@ -253,29 +266,7 @@ def evaluate(args):
         if args.replay_depth and t % env_cfg.depth.update_interval == 0:
             infos["depth"] = saved_depth[(t // env_cfg.depth.update_interval) % len(saved_depth)].to(env.device)
 
-        if args.web:
-            web_viewer.render(fetch_results=True, step_graphics=True, render_all_camera_sensors=True, wait_for_page_load=True)
-
-        if args.render_locally:
-            start = time.time()
-            env_imgs = env.render_envs(env_ids=envs_to_render)
-            print(f"Took {time.time() - start:.2f}s to render images")
-
-            start = time.time()
-            for frame_i, (viewpoint, frame) in enumerate(env_imgs.items()):
-                # Convert the image from RGBA (IsaacGym) to BGR (OpenCV) if needed
-                bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
-            
-                env_id = envs_to_render[frame_i]
-                video_writers[env_id].write(bgr_frame)
-                
-            print(f"Took {time.time() - start:.2f}s to write images")
-
         lookat_id = env.lookat_id
-
-        if args.render_locally:
-            for v in video_writers:
-                v.release()
 
         # Log stuff
         # cur_rew_sum += rews
@@ -452,40 +443,8 @@ def evaluate(args):
         if args.plot_cells:
             plt.show()
 
+    env.close()
+
 if __name__ == '__main__':
-    EXPORT_POLICY = False
-    RECORD_FRAMES = False
-    MOVE_CAMERA = False
-
-    parser = argparse.ArgumentParser()
-    add_shared_args(parser)
-
-    parser.add_argument("--checkpoint", type=int, default=-1, help="Which model checkpoint to load. If -1, will load the last checkpoint.")
-    parser.add_argument("--max_steps", type=int, help="Maximum number of evaluation steps")
-    parser.add_argument("--use_jit", action="store_true", default=False, help="Load jit script when playing")
-    parser.add_argument("--web", action="store_true", default=False, help="Visualize evaluation via web viewer")
-    parser.add_argument("--metric_granularity", type=str, default="all", choices=["type", "level", "cell", "all"])
-    parser.add_argument("--no_save", action="store_true", default=False, help="Do not save any evaluation results")
-    parser.add_argument("--plot_cells", action="store_true", default=False, help="Plot evaluation results in new window")
-
-    parser.add_argument("--replay_actions", action="store_true", default=False, help="Replay actions stored from deployment")
-    parser.add_argument("--replay_depth", action="store_true", default=False, help="Replay depth stored from deployment")
-
-    parser.add_argument("--render_locally", action="store_true", default=False, help="Render videos of robot")
-
-    args = parser.parse_args()
-    args = process_args(args)
-
-    # if not args.headless:
-    #     env_cfg, _ = task_registry.get_cfgs(name=args.task)
-    #     # Setting up exactly one env per terrain grid cell
-    #     if args.terrain_rows is None:
-    #         print("Setting terrain_rows to 1 as default")
-    #         args.terrain_rows = 1
-    #     if args.terrain_cols is None:
-    #         args.terrain_cols = env_cfg.terrain.num_cols
-    #     if args.num_envs is None:
-    #         args.num_envs = args.terrain_rows * args.terrain_cols
-
-    args.script = "evaluate"
     evaluate(args)
+    simulation_app.close()

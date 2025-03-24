@@ -32,22 +32,48 @@ import numpy as np
 import os
 from datetime import datetime
 import gc
+import sys
 
-import isaacgym
 import argparse
 from legged_gym.envs import *
-from legged_gym.utils import task_registry, add_shared_args, process_args
+from legged_gym.utils import add_shared_args
+from .helpers import update_cfg_from_args, class_to_dict, get_checkpoint, set_seed
 import shutil
 import torch
 import wandb
 import subprocess
 from pathlib import Path
 import pickle
+from isaaclab.app import AppLauncher
 
-from legged_gym.utils import webviewer
+parser = argparse.ArgumentParser()
+add_shared_args(parser)
+
+parser.add_argument("--resume", action="store_true", default=False, help="Resume training from a checkpoint")
+parser.add_argument("--load_run", type=str, help="Name of the run to load when resuming. If unspecified, will load exptid. Overrides config file if provided.")
+parser.add_argument("--checkpoint", type=int, default=-1, help="Which model checkpoint to load. If -1, will load the last checkpoint. Overrides config file if provided.")
+parser.add_argument("--max_iterations", type=int, help="Maximum number of training iterations. Overrides config file if provided.")
+
+AppLauncher.add_app_launcher_args(parser)
+
+args = parser.parse_args()
+if not args.headless:
+    print("Setting headless to True, overriding (not tested in non-headless mode)")
+    args.headless = True
+
+assert not (args.web and args.render_images), "Cannot render images and use web viewer at the same time"
+
+args.script = "train"
+app_launcher = AppLauncher(args_cli)
+simulation_app = app_launcher.app
 
 os.environ["WANDB_SILENT"] = "False"
 file_dir = os.path.dirname(os.path.abspath(__file__))  # Location of this file
+
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+torch.backends.cudnn.deterministic = False
+torch.backends.cudnn.benchmark = False
 
 def save_file(file, log_dir):
     wandb.save(file, policy="now")
@@ -67,30 +93,9 @@ def train(args):
         resume="allow"
     )
 
-    if args.render_images:
-        # To avoid affecting training, we run rendering in a separate process
-        # NOTE: If rendering if done with too many environments (like that used for training), there may be unexpected errors
-        #       Thus, we cannot render and train with the same simulation setup
-        print("Running render.py subprocess and waiting...")
-        render_log_dir = Path(LEGGED_GYM_ROOT_DIR) / "logs" / args.proj_name / args.exptid / "renders"
-        if render_log_dir is not None:
-            render_log_dir.mkdir(parents=True, exist_ok=True)
-        render_command = f"python {file_dir}/render.py --task {args.task} --save_dir {render_log_dir} --terrain_type {args.terrain_type} --terrain_rows 1 --device {args.device}"
-        process = subprocess.Popen(
-            render_command.split(" "),
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={**os.environ.copy(), "TQDM_DISABLE": "1"}
-        )
-        _, stderr = process.communicate()
-        if stderr:
-            print("Error in render.py subprocess:")
-            print(stderr.decode('utf-8'))
-        wandb.log({"terrain_render": wandb.Image(str(render_log_dir / "summary.png"))}, commit=False)
-
-    env, env_cfg = task_registry.make_env(name=args.task, args=args)
-    ppo_runner, train_cfg, log_dir, _, _ = task_registry.make_alg_runner(env=env, args=args, name=args.task)
-    if args.render_images:
-        assert log_dir == render_log_dir.parent, "Log directory mismatch between train.py and render.py"
-
+    env, env_cfg = task_registry.make_env(args=args, name=args.task, render_mode=None)
+    ppo_runner, train_cfg, log_dir, _, _ = task_registry.make_alg_runner(env=env, args=args, name="go1")
+    
     # Save config and important source files
     legged_robot_file = LEGGED_GYM_ROOT_DIR + "/legged_gym/envs/base/legged_robot.py"
     save_file(legged_robot_file, log_dir)
@@ -107,14 +112,8 @@ def train(args):
         cfg = (env_cfg, train_cfg)
         pickle.dump(cfg, f)
 
-    if args.web:
-        web_viewer = webviewer.WebViewer()
-        web_viewer.setup(env)
-    else:
-        web_viewer = None
-
     print(f"Starting training, using log directory {log_dir}...")
-    ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True, web_viewer=web_viewer)
+    ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True, web_viewer=None)
 
     # added this code due to RAM issues
     # env.close()
@@ -123,27 +122,9 @@ def train(args):
     # gc.collect()
 
     wandb.finish(quiet=True)
+    env.close()
     print("Done training!")
 
 if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser()
-    add_shared_args(parser)
-
-    parser.add_argument("--resume", action="store_true", default=False, help="Resume training from a checkpoint")
-    parser.add_argument("--load_run", type=str, help="Name of the run to load when resuming. If unspecified, will load exptid. Overrides config file if provided.")
-    parser.add_argument("--checkpoint", type=int, default=-1, help="Which model checkpoint to load. If -1, will load the last checkpoint. Overrides config file if provided.")
-    parser.add_argument("--max_iterations", type=int, help="Maximum number of training iterations. Overrides config file if provided.")
-    parser.add_argument("--render_images", action="store_true", default=False, help="Render the environment and save images")
-    parser.add_argument("--web", action="store_true", default=False, help="Visualize training via web viewer")
-
-    args = parser.parse_args()
-    args = process_args(args)
-    if not args.headless:
-        print("Setting headless to True, overriding")
-        args.headless = True
-
-    assert not (args.web and args.render_images), "Cannot render images and use web viewer at the same time"
-
-    args.script = "train"
     train(args)
+    simulation_app.close()
