@@ -3,7 +3,7 @@ The following instructions will install everything under one Conda environment. 
 
 1. Create a new Conda environment with:
     ```
-    conda create -n eurekaverse python=3.8
+    conda create -n eurekaverse python=3.10
     conda activate eurekaverse
     ```
 
@@ -19,7 +19,12 @@ The following instructions will install everything under one Conda environment. 
     pip install -e extreme-parkour/rsl_rl
     ```
 
-4. Install Isaac Lab:
+4. Install Isaac Sim and Isaac Lab
+    ```
+    pip install 'isaacsim[all,extscache]==4.5.0' --extra-index-url https://pypi.nvidia.com
+    ```
+
+5. Install Isaac Lab:
     ```
     git clone git@github.com:isaac-sim/IsaacLab.git
     sudo apt install cmake build-essential

@@ -23,7 +23,6 @@ setup(
         'gpustat',
         'tqdm',
         'ipdb',
-        "isaacsim[all,extscache]==4.5.0",
     ],
     packages=find_packages()
 )
