@@ -6,7 +6,7 @@ setup(
     author='',
     version='1.0',
     description='',
-    python_requires='>=3.8',
+    python_requires='>=3.10',
     install_requires=[
         'torch',
         'torchvision',
@@ -23,6 +23,7 @@ setup(
         'gpustat',
         'tqdm',
         'ipdb',
+        "isaacsim[all,extscache]==4.5.0",
     ],
     packages=find_packages()
 )
