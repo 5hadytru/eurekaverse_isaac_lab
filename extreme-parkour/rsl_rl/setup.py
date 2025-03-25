@@ -9,8 +9,6 @@ setup(name='rsl_rl',
       description='Fast and simple RL algorithms implemented in pytorch',
       python_requires='>=3.6',
       install_requires=[
-            "torch",
-            "torchvision",
             "numpy"
       ],
       )
