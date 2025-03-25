@@ -8,9 +8,6 @@ setup(
     description='',
     python_requires='>=3.10',
     install_requires=[
-        'torch',
-        'torchvision',
-        'torchaudio',
         'numpy',
         'scipy',
         'matplotlib',
