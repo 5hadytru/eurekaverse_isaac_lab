@@ -42,6 +42,7 @@ import subprocess
 from pathlib import Path
 import pickle
 from isaaclab.app import AppLauncher
+from legged_gym.utils import add_shared_args
 
 parser = argparse.ArgumentParser()
 add_shared_args(parser)
@@ -65,7 +66,6 @@ app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
 from legged_gym.envs import *
-from legged_gym.utils import add_shared_args
 from .helpers import update_cfg_from_args, class_to_dict, get_checkpoint, set_seed
 
 os.environ["WANDB_SILENT"] = "False"
