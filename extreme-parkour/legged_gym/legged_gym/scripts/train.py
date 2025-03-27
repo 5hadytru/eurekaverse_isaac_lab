@@ -35,9 +35,6 @@ import gc
 import sys
 
 import argparse
-from legged_gym.envs import *
-from legged_gym.utils import add_shared_args
-from .helpers import update_cfg_from_args, class_to_dict, get_checkpoint, set_seed
 import shutil
 import torch
 import wandb
@@ -66,6 +63,10 @@ assert not (args.web and args.render_images), "Cannot render images and use web 
 args.script = "train"
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
+
+from legged_gym.envs import *
+from legged_gym.utils import add_shared_args
+from .helpers import update_cfg_from_args, class_to_dict, get_checkpoint, set_seed
 
 os.environ["WANDB_SILENT"] = "False"
 file_dir = os.path.dirname(os.path.abspath(__file__))  # Location of this file
