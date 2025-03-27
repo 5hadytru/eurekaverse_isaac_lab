@@ -1,7 +1,4 @@
 import numpy as np
-from isaacgym import terrain_utils
-
-
 
 def set_terrain(terrain, variation, difficulty):
     terrain_fns = [

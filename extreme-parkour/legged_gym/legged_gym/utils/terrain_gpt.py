@@ -4,7 +4,7 @@ from numpy.random import choice
 from scipy import interpolate
 from math import sqrt
 import random
-from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg
+from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, CustomTerrainCfg
 from pydelatin import Delatin
 import pyfqmr
 from scipy.ndimage import binary_dilation
@@ -65,7 +65,7 @@ def run_ambiguous_set_terrain(set_terrain_fn, terrain, variation, difficulty):
     return set_idx
 
 class Terrain:
-    def __init__(self, cfg: LeggedRobotCfg.terrain, num_robots) -> None:
+    def __init__(self, cfg: CustomTerrainCfg, num_robots) -> None:
         self.cfg = cfg
         self.num_robots = num_robots
         self.type = cfg.mesh_type

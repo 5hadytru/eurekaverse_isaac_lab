@@ -1,5 +1,4 @@
 import numpy as np
-from isaacgym import terrain_utils
 
 difficulty_scaling = {
     "jump_on_and_off_box": (0.1, 0.8),

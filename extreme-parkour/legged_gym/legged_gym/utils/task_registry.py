@@ -37,12 +37,10 @@ import numpy as np
 from pathlib import Path
 import pickle
 
-from isaaclab.envs import DirectRLEnv
 from rsl_rl.runners import OnPolicyRunner
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from .helpers import update_cfg_from_args, class_to_dict, get_checkpoint, set_seed, parse_sim_params
-from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
+from .helpers import update_cfg_from_args, class_to_dict, get_checkpoint, set_seed
 
 class TaskRegistry():
     def __init__(self):
@@ -50,21 +48,21 @@ class TaskRegistry():
         self.env_cfgs = {}
         self.train_cfgs = {}
     
-    def register(self, name: str, task_class: DirectRLEnv, env_cfg: LeggedRobotCfg, train_cfg: LeggedRobotCfgPPO):
+    def register(self, name: str, task_class, env_cfg, train_cfg):
         self.task_classes[name] = task_class
         self.env_cfgs[name] = env_cfg
         self.train_cfgs[name] = train_cfg
     
-    def get_task_class(self, name: str) -> VecEnv:
+    def get_task_class(self, name: str):
         return self.task_classes[name]
     
-    def get_cfgs(self, name) -> Tuple[LeggedRobotCfg, LeggedRobotCfgPPO]:
+    def get_cfgs(self, name):
         train_cfg = self.train_cfgs[name]
         env_cfg = self.env_cfgs[name]
         env_cfg.seed = train_cfg.seed
         return env_cfg, train_cfg
     
-    def get_saved_cfgs(self, load_dir) -> Tuple[LeggedRobotCfg, LeggedRobotCfgPPO]:
+    def get_saved_cfgs(self, load_dir):
         config_path = Path(load_dir) / "legged_robot_config.pkl"
         if not config_path.exists():
             return None, None
@@ -72,7 +70,7 @@ class TaskRegistry():
             cfgs = pickle.load(f)
         return cfgs
     
-    def make_env(self, name, args, render_mode, env_cfg=None) -> Tuple[VecEnv, LeggedRobotCfg]:
+    def make_env(self, name, args, render_mode, env_cfg=None):
         """ Creates an environment either from a registered namme or from the provided config file.
 
         Args:
@@ -107,7 +105,7 @@ class TaskRegistry():
 
         return env, env_cfg
 
-    def make_alg_runner(self, env, args, name=None, train_cfg=None, init_wandb=True, log_root="", **kwargs) -> Tuple[OnPolicyRunner, LeggedRobotCfgPPO]:
+    def make_alg_runner(self, env, args, name=None, train_cfg=None, init_wandb=True, log_root="", **kwargs):
         """Creates the training algorithm either from a registered name or from the provided config file.
 
         Args:

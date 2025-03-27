@@ -36,18 +36,16 @@ import os
 
 from isaaclab.envs import DirectRLEnv
 from isaaclab.terrains import TerrainImporter, TerrainImporterCfg
-from isaaclab.sim.utils import sim_utils
+import isaaclab.sim as sim_utils
 from isaaclab.assets.articulation import Articulation
 from isaaclab.utils.math import quat_rotate_inverse, quat_apply, quat_from_euler_xyz, quat_apply_yaw, wrap_to_pi
 
-import torch, torchvision
+import torch
 from torch import Tensor
 from typing import Tuple, Dict
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.envs.base.base_task import BaseTask
 from legged_gym.utils.terrain_gpt import Terrain
-from legged_gym.utils.math import *
 from legged_gym.utils.helpers import class_to_dict
 from scipy.spatial.transform import Rotation as R
 from .legged_robot_config import LeggedRobotCfg, UNITREE_GO1_CFG
@@ -87,7 +85,7 @@ def euler_from_quaternion(quat_angle):
 class LeggedRobot(DirectRLEnv):
     cfg: LeggedRobotCfg
     def __init__(self, cfg: LeggedRobotCfg, render_mode: str):
-        super().__init__(self.cfg, render_mode)
+        super().__init__(cfg, render_mode)
         
         self.cfg = cfg
         self.height_samples = None
@@ -124,8 +122,6 @@ class LeggedRobot(DirectRLEnv):
         self.lookat_id = 0
         self.lookat_vec = torch.tensor([-0, 2, 1], requires_grad=False, device=self.device)
 
-        self.resize_transform = torchvision.transforms.Resize((self.cfg.depth.processed_resolution[1], self.cfg.depth.processed_resolution[0]), 
-                                                              interpolation=torchvision.transforms.InterpolationMode.BICUBIC)
         self._init_buffers()
         self._prepare_reward_function()
         self.init_done = True
@@ -255,6 +251,9 @@ class LeggedRobot(DirectRLEnv):
         depth_image += self.cfg.depth.granular_noise * torch.randn_like(depth_image)
         blackout_idxs = torch.where(torch.rand(depth_image.shape, device=depth_image.device) < self.cfg.depth.blackout_noise)
         depth_image[blackout_idxs] = 0.0
+
+        self.resize_transform = torchvision.transforms.Resize((self.cfg.depth.processed_resolution[1], self.cfg.depth.processed_resolution[0]), 
+                                                              interpolation=torchvision.transforms.InterpolationMode.BICUBIC)
 
         # Clip near and far and normalize
         depth_image = torch.clip(depth_image, self.cfg.depth.near_clip, self.cfg.depth.far_clip)

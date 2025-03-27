@@ -122,11 +122,7 @@ def add_sim_args(parser):
     # Simulation setup
     parser.add_argument("--proj_name", type=str, default="parkour", help="Main project name, used for logging and saving")
     parser.add_argument("--exptid", type=str, help="Experiment name, used for logging and saving")
-    parser.add_argument("--headless", action="store_true", default=False, help="Disable simulation display (this does not prevent rendering)")
     parser.add_argument("--seed", type=int, help="Random seed")
-
-    # Devices and low-level specifics
-    parser.add_argument("--device", type=str, default="cuda:0", help='Device for learning, simulation, and graphics (cpu, gpu, cuda:n)')
 
     # Weights and Biases tracking
     parser.add_argument("--use_wandb", action="store_true", default=False, help="Use wandb for logging")

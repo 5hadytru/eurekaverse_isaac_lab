@@ -42,7 +42,7 @@ import subprocess
 from pathlib import Path
 import pickle
 from isaaclab.app import AppLauncher
-from legged_gym.utils import add_shared_args
+from legged_gym.utils import add_shared_args, update_cfg_from_args, class_to_dict, get_checkpoint, set_seed, task_registry
 
 parser = argparse.ArgumentParser()
 add_shared_args(parser)
@@ -59,14 +59,11 @@ if not args.headless:
     print("Setting headless to True, overriding (not tested in non-headless mode)")
     args.headless = True
 
-assert not (args.web and args.render_images), "Cannot render images and use web viewer at the same time"
-
 args.script = "train"
-app_launcher = AppLauncher(args_cli)
+app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
 from legged_gym.envs import *
-from .helpers import update_cfg_from_args, class_to_dict, get_checkpoint, set_seed
 
 os.environ["WANDB_SILENT"] = "False"
 file_dir = os.path.dirname(os.path.abspath(__file__))  # Location of this file

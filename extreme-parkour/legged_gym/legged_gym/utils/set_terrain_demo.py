@@ -2,7 +2,44 @@
 
 import numpy as np
 import random
-from isaacgym import terrain_utils
+
+
+def random_uniform_terrain(terrain, min_height, max_height, step=1, downsampled_scale=None,):
+    """
+    Generate a uniform noise terrain
+
+    Parameters
+        terrain (SubTerrain): the terrain
+        min_height (float): the minimum height of the terrain [meters]
+        max_height (float): the maximum height of the terrain [meters]
+        step (float): minimum height change between two points [meters]
+        downsampled_scale (float): distance between two randomly sampled points ( musty be larger or equal to terrain.horizontal_scale)
+
+    """
+    if downsampled_scale is None:
+        downsampled_scale = terrain.horizontal_scale
+
+    # switch parameters to discrete units
+    min_height = int(min_height / terrain.vertical_scale)
+    max_height = int(max_height / terrain.vertical_scale)
+    step = int(step / terrain.vertical_scale)
+
+    heights_range = np.arange(min_height, max_height + step, step)
+    height_field_downsampled = np.random.choice(heights_range, (int(terrain.width * terrain.horizontal_scale / downsampled_scale), int(
+        terrain.length * terrain.horizontal_scale / downsampled_scale)))
+
+    x = np.linspace(0, terrain.width * terrain.horizontal_scale, height_field_downsampled.shape[0])
+    y = np.linspace(0, terrain.length * terrain.horizontal_scale, height_field_downsampled.shape[1])
+
+    f = interpolate.interp2d(y, x, height_field_downsampled, kind='linear')
+
+    x_upsampled = np.linspace(0, terrain.width * terrain.horizontal_scale, terrain.width)
+    y_upsampled = np.linspace(0, terrain.length * terrain.horizontal_scale, terrain.length)
+    z_upsampled = np.rint(f(y_upsampled, x_upsampled))
+
+    terrain.height_field_raw += z_upsampled.astype(np.int16)
+    return terrain
+
 
 def set_terrain(terrain, variation, difficulty):
     """Terrain with hurdles, steps, a gap, and alternating parkour slopes."""
@@ -81,6 +118,6 @@ def set_terrain(terrain, variation, difficulty):
     terrain.goals = goals * terrain.horizontal_scale
 
     noise = random.uniform(0.02, 0.04)
-    terrain_utils.random_uniform_terrain(terrain, min_height=-noise, max_height=noise, step=0.005, downsampled_scale=0.075)
+    random_uniform_terrain(terrain, min_height=-noise, max_height=noise, step=0.005, downsampled_scale=0.075)
 
     return 0

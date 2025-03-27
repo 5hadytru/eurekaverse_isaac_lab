@@ -28,9 +28,7 @@
 #
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
-from .helpers import class_to_dict, update_class_from_dict, set_seed, get_checkpoint, export_policy_as_jit, add_sim_args, add_agent_args, add_terrain_args, add_shared_args, process_args
+from .helpers import class_to_dict, update_class_from_dict, update_cfg_from_args, set_seed, get_checkpoint, export_policy_as_jit, add_sim_args, add_agent_args, add_terrain_args, add_shared_args
 from .task_registry import task_registry
 from .logger import Logger
-from .math import *
-from .terrain import Terrain
 # from .terrain_minimal import Terrain
