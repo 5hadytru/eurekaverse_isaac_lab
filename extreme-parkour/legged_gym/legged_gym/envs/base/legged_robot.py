@@ -85,6 +85,14 @@ class LeggedRobot(DirectRLEnv):
     cfg: LeggedRobotCfg
     def __init__(self, cfg: LeggedRobotCfg, render_mode: str):
         super().__init__(cfg, render_mode)
+
+        # save body names from the robot
+        self.dof_names = self._robot.joint_names
+        self.num_dof = len(self.dof_names)
+        self.feet_indices = [idx for idx, n in enumerate(self._robot.body_names) if "foot" in n.lower()]
+        assert len(self.feet_indices) == 4, f"Could not find 4 feet (searched {body_names})! Is 'hip' correct?"
+        self.hip_indices = [idx for idx, n in enumerate(self._robot.body_names) if "hip" in n.lower()]
+        assert len(self.hip_indices) == 4, f"Could not find 4 hips (searched {body_names})! Is 'hip' correct?"
         
         self.cfg = cfg
         self.height_samples = None
@@ -892,15 +900,6 @@ class LeggedRobot(DirectRLEnv):
         # add Go1 to scene
         self._robot = Articulation(self.cfg.robot)
         self.attach_camera_to_robot()
-
-        # save body names from the asset
-        body_names = self._robot.body_names
-        self.dof_names = self._robot.joint_names
-        self.num_dof = len(self.dof_names)
-        self.feet_indices = [idx for idx, n in enumerate(body_names) if "foot" in n.lower()]
-        assert len(self.feet_indices) == 4, f"Could not find 4 feet (searched {body_names})! Is 'hip' correct?"
-        self.hip_indices = [idx for idx, n in enumerate(body_names) if "hip" in n.lower()]
-        assert len(self.hip_indices) == 4, f"Could not find 4 hips (searched {body_names})! Is 'hip' correct?"
 
         # base_init_state_list = self.cfg.init_state.pos + self.cfg.init_state.rot + self.cfg.init_state.lin_vel + self.cfg.init_state.ang_vel
         # self.base_init_state = to_torch(base_init_state_list, device=self.device, requires_grad=False)

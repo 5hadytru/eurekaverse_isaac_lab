@@ -91,7 +91,7 @@ class TrimeshTerrainImporter:
         """
         Create a trimesh.Trimesh object -> store as USD prim
         """
-        prim_path = f"/World/Terrain/terrain_{self.device}"
+        prim_path = f"/World/Terrain/terrain_{str(self.device).replace(':', '_')}"
         mesh = trimesh.Trimesh(self.vertices, self.triangles)
         create_prim_from_mesh(
             prim_path, mesh, visual_material=self.visual_material, physics_material=self.physics_material
@@ -143,7 +143,6 @@ class Terrain:
 
                 self.add_terrain_to_map(terrain, i, j)
 
-        self.downsample_height_field()
         self.heightsamples = self.height_field_raw
         if self.type=="trimesh":
             print("Converting heightmap to trimesh...")
@@ -261,19 +260,6 @@ class Terrain:
         self.terrain_type[i, j] = terrain.idx
         self.goals[i, j, :, :2] = terrain.goals + [i * self.env_length, j * self.env_width]
 
-    def downsample_height_field(self, factor=1):
-        """
-        Downsample the height field by taking every 'factor'-th element.
-        
-        Parameters:
-            height_field (np.array): Original high-resolution height field.
-            factor (int): Downsampling factor.
-            
-        Returns:
-            np.array: Downsampled height field.
-        """
-        self.height_field_raw = self.height_field_raw[::factor, ::factor]
-        
     
 def fix_terrain(terrain):
     """Fix common errors with GPT-generated terrains"""

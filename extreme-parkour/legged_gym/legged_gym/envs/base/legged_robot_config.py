@@ -26,7 +26,7 @@ GO1_ACTUATOR_CFG = ActuatorNetMLPCfg(
 )
 
 UNITREE_GO1_CFG = ArticulationCfg(
-    prim_path="{ENV_REGEX_NS}/Robot",
+    prim_path="/World/envs/env_.*/Robot",
     spawn=sim_utils.UsdFileCfg(
         usd_path=f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/Go1/go1.usd",
         activate_contact_sensors=True,
@@ -200,7 +200,7 @@ class CustomTerrainCfg:
     y_range = [-0.4, 0.4]
     
     edge_width_thresh = 0.05
-    horizontal_scale = 0.05        # [m] Granularity of the grid cells in terrain plane (x, y) (Note: this influences computation time by a lot)
+    horizontal_scale = 0.075        # [m] Granularity of the grid cells in terrain plane (x, y) (Note: this influences computation time by a lot)
                                     #     When training with depth, consider using 0.1 to reduce computation time
     vertical_scale = 0.005         # [m] Granularity of the cells' height in terrain plane (z)
     border_size = 5                # [m] Size of the flat border around the entire terrain
