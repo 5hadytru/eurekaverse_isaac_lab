@@ -35,7 +35,6 @@ import numpy as np
 import os
 
 from isaaclab.envs import DirectRLEnv
-from isaaclab.terrains import TerrainImporter, TerrainImporterCfg
 import isaaclab.sim as sim_utils
 from isaaclab.assets.articulation import Articulation
 from isaaclab.utils.math import quat_rotate_inverse, quat_apply, quat_from_euler_xyz, quat_apply_yaw, wrap_to_pi
@@ -45,7 +44,7 @@ from torch import Tensor
 from typing import Tuple, Dict
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.utils.terrain_gpt import Terrain
+from legged_gym.utils.terrain_gpt import Terrain, TrimeshTerrainImporter
 from legged_gym.utils.helpers import class_to_dict
 from scipy.spatial.transform import Rotation as R
 from .legged_robot_config import LeggedRobotCfg, UNITREE_GO1_CFG
@@ -550,6 +549,7 @@ class LeggedRobot(DirectRLEnv):
 
         if mesh_type in ['heightfield', 'trimesh']:
             self.terrain = Terrain(self.cfg.terrain, self.num_envs)
+
         if mesh_type=='plane':
             self._create_ground_plane()
         elif mesh_type=='heightfield':
@@ -824,27 +824,29 @@ class LeggedRobot(DirectRLEnv):
         """
         print("Adding trimesh to simulation...")
 
-        terrain_cfg = TerrainImporterCfg(
-            prim_path=f"/World/Terrain",
-            usd_path=self.terrain.usd_file_path,
-            terrain_type="usd",
-            collision_group=-1,
-            # physics properties are specified in the USD file
-            # physics_material=sim_utils.RigidBodyMaterialCfg(
-            #     static_friction=self.cfg.terrain.static_friction,
-            #     dynamic_friction=self.cfg.terrain.dynamic_friction,
-            #     restitution=self.cfg.terrain.restitution,
-            #     friction_combine_mode="multiply",
-            #     restitution_combine_mode="average"
-            # ),
-            visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(0.2, 0.3, 0.4)
-            )
+        physics_material_cfg = sim_utils.RigidBodyMaterialCfg(
+            static_friction=1.0,
+            dynamic_friction=1.0,
+            restitution=0.0,
+            friction_combine_mode="multiply",
+            restitution_combine_mode="average"
         )
 
-        terrain_importer = TerrainImporter(terrain_cfg) 
+        visual_material_cfg = sim_utils.PreviewSurfaceCfg(
+            diffuse_color=(0.2, 0.3, 0.4)
+        )
+        
         self._get_initial_env_origins()
-        terrain_importer.env_origins = self.initial_env_origins.clone()
+
+        terrain_importer = TrimeshTerrainImporter(
+            vertices=self.terrain.vertices,
+            triangles=self.terrain.triangles,
+            initial_env_origins=self.initial_env_origins, 
+            physics_material_cfg=physics_material_cfg, 
+            visual_material_cfg=visual_material_cfg,
+            device=self.cfg.sim.device
+        )
+        
         self.scene._terrain = terrain_importer
 
         print("Trimesh added")

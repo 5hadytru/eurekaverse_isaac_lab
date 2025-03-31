@@ -26,6 +26,7 @@ GO1_ACTUATOR_CFG = ActuatorNetMLPCfg(
 )
 
 UNITREE_GO1_CFG = ArticulationCfg(
+    prim_path="{ENV_REGEX_NS}/Robot",
     spawn=sim_utils.UsdFileCfg(
         usd_path=f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/Go1/go1.usd",
         activate_contact_sensors=True,
@@ -213,9 +214,6 @@ class CustomTerrainCfg:
     all_vertical = False
     no_flat = True
     
-    static_friction = 1.0
-    dynamic_friction = 1.0
-    restitution = 0.
     measure_heights = True
     measured_points_x = [-0.45, -0.3, -0.15, 0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1.05, 1.2] # 1mx1.6m rectangle (without center line)
     measured_points_y = [-0.75, -0.6, -0.45, -0.3, -0.15, 0., 0.15, 0.3, 0.45, 0.6, 0.75]
@@ -439,24 +437,6 @@ class LeggedRobotCfg(DirectRLEnvCfg):
     robot = UNITREE_GO1_CFG
 
     scene: InteractiveSceneCfg = ContactSensorSceneCfg()
-
-    terrain_importer_cfg = TerrainImporterCfg(
-        prim_path=f"/World/Terrain",
-        usd_path=None, # this must be set before _setup_scene() is called (in DirectRLEnv __init__)
-        terrain_type="usd",
-        collision_group=-1,
-        # physics properties are specified in the USD file
-        # physics_material=sim_utils.RigidBodyMaterialCfg(
-        #     static_friction=self.cfg.terrain.static_friction,
-        #     dynamic_friction=self.cfg.terrain.dynamic_friction,
-        #     restitution=self.cfg.terrain.restitution,
-        #     friction_combine_mode="multiply",
-        #     restitution_combine_mode="average"
-        # ),
-        visual_material=sim_utils.PreviewSurfaceCfg(
-            diffuse_color=(0.2, 0.3, 0.4)
-        )
-    )
 
     # REQUIRED TOP-LEVEL ENV ARGS
     # control decimation was manually applied in previous implementation; migration guide makes it confusing since

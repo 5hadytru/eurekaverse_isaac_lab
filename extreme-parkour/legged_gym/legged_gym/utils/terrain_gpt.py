@@ -12,8 +12,12 @@ import inspect
 import uuid
 import importlib.util
 from legged_gym.utils.helpers import set_seed
-from pxr import Usd, UsdGeom, Gf
+from pxr import Usd, UsdGeom, UsdPhysics, UsdShade, Gf
 from datetime import datetime
+
+from isaaclab.terrains.utils import create_prim_from_mesh
+import trimesh
+import torch
 
 # This is the standard set_terrain
 from legged_gym import LEGGED_GYM_ROOT_DIR
@@ -64,6 +68,35 @@ def run_ambiguous_set_terrain(set_terrain_fn, terrain, variation, difficulty):
         raise ValueError(f"set_terrain function signature not recognized: {args}")
     return set_idx
 
+class TrimeshTerrainImporter:
+    def __init__(
+        self, 
+        vertices:np.ndarray,
+        triangles:np.ndarray,
+        initial_env_origins:torch.Tensor, 
+        physics_material_cfg, 
+        visual_material_cfg,
+        device
+    ):
+        self.vertices = vertices
+        self.triangles = triangles
+        self.env_origins = initial_env_origins.clone()
+        self.visual_material = visual_material_cfg
+        self.physics_material = physics_material_cfg
+        self.device = device
+
+        self.import_mesh()
+
+    def import_mesh(self):
+        """
+        Create a trimesh.Trimesh object -> store as USD prim
+        """
+        prim_path = f"/World/Terrain/terrain_{self.device}"
+        mesh = trimesh.Trimesh(self.vertices, self.triangles)
+        create_prim_from_mesh(
+            prim_path, mesh, visual_material=self.visual_material, physics_material=self.physics_material
+        )
+
 class Terrain:
     def __init__(self, cfg: CustomTerrainCfg, num_robots) -> None:
         self.cfg = cfg
@@ -110,6 +143,7 @@ class Terrain:
 
                 self.add_terrain_to_map(terrain, i, j)
 
+        self.downsample_height_field()
         self.heightsamples = self.height_field_raw
         if self.type=="trimesh":
             print("Converting heightmap to trimesh...")
@@ -133,10 +167,10 @@ class Terrain:
                 assert cfg.hf2mesh_method == "fast", "Height field to mesh method must be grid or fast"
                 self.vertices, self.triangles = convert_heightfield_to_trimesh_delatin(self.height_field_raw, self.cfg.horizontal_scale, self.cfg.vertical_scale, max_error=cfg.max_error)
             
-            self.save_trimesh()
+            print(f"Created vertices {self.vertices.shape}")
+            print(f"Created triangles {self.triangles.shape}")
 
-            print("Created {} vertices".format(self.vertices.shape[0]))
-            print("Created {} triangles".format(self.triangles.shape[0]))
+            self.vertices, self.triangles = self.vertices.tolist(), self.triangles.tolist()
 
     def make_terrain(self, variation, difficulty):
         # Make terrain generation deterministic
@@ -227,33 +261,18 @@ class Terrain:
         self.terrain_type[i, j] = terrain.idx
         self.goals[i, j, :, :2] = terrain.goals + [i * self.env_length, j * self.env_width]
 
-    def save_trimesh(self):
-        """Save the generated trimesh to a USD file for use with Isaac Lab's TerrainImporter."""
-        self.usd_file_path = os.path.join(LEGGED_GYM_ROOT_DIR, "usd_files", "terrains", datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "_" + str(uuid.uuid4()) + ".usda")
-        stage = Usd.Stage.CreateNew(self.usd_file_path)
-        UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    def downsample_height_field(self, factor=1):
+        """
+        Downsample the height field by taking every 'factor'-th element.
         
-        # Create mesh prim
-        mesh_prim = stage.DefinePrim("/terrain", "Mesh")
-        usd_mesh = UsdGeom.Mesh(mesh_prim)
-        
-        # Configure geometry
-        usd_mesh.CreatePointsAttr([Gf.Vec3f(*v) for v in self.vertices])
-        usd_mesh.CreateFaceVertexCountsAttr([3]*len(self.triangles))
-        usd_mesh.CreateFaceVertexIndicesAttr(self.triangles.flatten().tolist())
-        
-        # Create physics material
-        material_path = "/Materials/TerrainMaterial"
-        material = UsdShade.Material.Define(stage, material_path)
-        physx_mat = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
-        physx_mat.CreateStaticFrictionAttr().Set(self.cfg.terrain.static_friction)
-        physx_mat.CreateDynamicFrictionAttr().Set(self.cfg.terrain.dynamic_friction) 
-        physx_mat.CreateRestitutionAttr().Set(self.cfg.terrain.restitution)
-        
-        # Bind material to mesh
-        UsdShade.MaterialBindingAPI(mesh_prim).Bind(material)
-        
-        stage.Save()
+        Parameters:
+            height_field (np.array): Original high-resolution height field.
+            factor (int): Downsampling factor.
+            
+        Returns:
+            np.array: Downsampled height field.
+        """
+        self.height_field_raw = self.height_field_raw[::factor, ::factor]
         
     
 def fix_terrain(terrain):
