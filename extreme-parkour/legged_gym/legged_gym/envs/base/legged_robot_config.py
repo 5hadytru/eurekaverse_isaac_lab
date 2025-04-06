@@ -76,13 +76,13 @@ class ContactSensorSceneCfg(InteractiveSceneCfg):
     env_spacing=3.0
 
     contact_forces_FOOT = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/.*_FOOT", update_period=0.0, history_length=1, debug_vis=True
+        prim_path="{ENV_REGEX_NS}/Robot/.*_foot", update_period=0.0, history_length=1, debug_vis=True
     )
     contact_forces_THIGH = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/.*_THIGH", update_period=0.0, history_length=1, debug_vis=True
+        prim_path="{ENV_REGEX_NS}/Robot/.*_thigh", update_period=0.0, history_length=1, debug_vis=True
     )
     contact_forces_CALF = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/.*_CALF", update_period=0.0, history_length=1, debug_vis=True
+        prim_path="{ENV_REGEX_NS}/Robot/.*_calf", update_period=0.0, history_length=1, debug_vis=True
     )
 
 
@@ -390,7 +390,7 @@ class RewardScales:
     feet_edge = -1
 
 
-class CustomRewardCfg:
+class CustomRewardsCfg:
     scales = RewardScales()
         
     soft_dof_pos_limit = 0.9
@@ -458,7 +458,7 @@ class LeggedRobotCfg(DirectRLEnvCfg):
     control = CustomCtrlCfg()
     asset = CustomAssetCfg()
     domain_rand = CustomDomainRandCfg()
-    reward = CustomRewardCfg()
+    rewards = CustomRewardsCfg()
     viewer = CustomViewerCfg()
 
 
