@@ -100,7 +100,7 @@ class OnPolicyRunner:
             self.env.num_envs, 
             self.num_steps_per_env, 
             [self.env.cfg.observation_space], 
-            [self.env.cfg.n_priv], 
+            [self.env.cfg.env.num_privileged_obs], 
             [self.env.cfg.action_space],
         )
 

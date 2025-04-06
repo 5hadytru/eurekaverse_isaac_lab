@@ -95,7 +95,6 @@ class LeggedRobot(DirectRLEnv):
         assert len(self.hip_indices) == 4, f"Could not find 4 hips (searched {body_names})! Is 'hip' correct?"
         
         self.cfg = cfg
-        self.height_samples = None
         self.debug_viz = True
         self.init_done = False
         self._parse_cfg(self.cfg)
@@ -645,7 +644,7 @@ class LeggedRobot(DirectRLEnv):
         Args:
             env_ids (List[int]): Environemnt ids
         """
-        new_joint_pos = self._robot.data.default_joint_pos + torch_rand_float(0., 0.9, (len(env_ids), self.num_dof), device=self.device)
+        new_joint_pos = self._robot.data.default_joint_pos[env_ids, :] + torch_rand_float(0., 0.9, (len(env_ids), self.num_dof), device=self.device)
         new_joint_vel = torch.zeros((len(env_ids), self.num_dof), device=self.device)
 
         env_ids_int32 = env_ids.to(dtype=torch.int32)
@@ -688,8 +687,8 @@ class LeggedRobot(DirectRLEnv):
         new_root_vel = torch.cat([
             torch_rand_float(-max_vel, max_vel, (self.num_envs, 2), device=self.device), # lin vel x/y
             self._robot.data.root_state_w[:, 9:]
-        ])
-        self.write_root_velocity_to_sim(new_root_vel)
+        ], dim=1) # (num_envs, 6)
+        self._robot.write_root_velocity_to_sim(new_root_vel)
 
     def _update_terrain_curriculum(self, env_ids):
         """ Implements the game-inspired curriculum.
@@ -912,7 +911,7 @@ class LeggedRobot(DirectRLEnv):
             raise NotImplementedError("Randomizing friction not implemented for Isaac Lab")
         
         self.mass_params_tensor = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
-        self.friction_coeffs_tensor = torch.ones((self.num_envs,), requires_grad=False).to(self.device).to(torch.float)
+        self.friction_coeffs_tensor = torch.ones((self.num_envs, 1), requires_grad=False).to(self.device).to(torch.float)
     
     def _get_initial_env_origins(self):
         """ Sets environment origins. On rough terrain the origins are defined by the terrain platforms.
@@ -1116,7 +1115,7 @@ class LeggedRobot(DirectRLEnv):
         return torch.sum(torch.square(self.torques), dim=1)
 
     def _reward_hip_pos(self):
-        return torch.sum(torch.square(self._robot.data.joint_pos[:, self.hip_indices] - self._robot.data.default_joint_pos[self.hip_indices]), dim=1)
+        return torch.sum(torch.square(self._robot.data.joint_pos[:, self.hip_indices] - self._robot.data.default_joint_pos[:, self.hip_indices]), dim=1)
 
     def _reward_dof_error(self):
         dof_error = torch.sum(torch.square(self._robot.data.joint_pos - self._robot.data.default_joint_pos), dim=1)

@@ -146,7 +146,7 @@ class TaskRegistry():
                                 train_cfg_dict, 
                                 log_dir, 
                                 init_wandb=init_wandb,
-                                device=args.rl_device, **kwargs)
+                                device=args.device, **kwargs)
 
         # Resume training if specified
         resume = train_cfg.runner.resume
