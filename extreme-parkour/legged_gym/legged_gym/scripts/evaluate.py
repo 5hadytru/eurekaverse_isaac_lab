@@ -50,12 +50,11 @@ from legged_gym.envs import *
 from legged_gym.utils import task_registry, add_shared_args
 from legged_gym.utils.helpers import get_checkpoint
 
-EXPORT_POLICY = False
-RECORD_FRAMES = False
-MOVE_CAMERA = False
 
 parser = argparse.ArgumentParser()
 add_shared_args(parser)
+
+parser.add_argument("--video", action="store_true", default=False, help="Record videos of agent")
 
 parser.add_argument("--checkpoint", type=int, default=-1, help="Which model checkpoint to load. If -1, will load the last checkpoint.")
 parser.add_argument("--max_steps", type=int, help="Maximum number of evaluation steps")
@@ -128,7 +127,18 @@ def evaluate(args):
         env_cfg.commands.ranges.lin_vel_y[0] = 0
 
     # prepare environment
-    env, _ = task_registry.make_env(args=args, name=args.task, render_mode=None)
+    env, _ = task_registry.make_env(args=args, name=args.task, render_mode="rgb_array" if args.video else None)
+
+    if args.video:
+        video_kwargs = {
+            "video_folder": os.path.join(load_dir, "videos", "eval"),
+            "episode_trigger": lambda episode_id: episode_id == 0,
+            "disable_logger": False,
+        }
+        print("[INFO] Recording videos during training.")
+        print_dict(video_kwargs, nesting=4)
+        env = gym.wrappers.RecordVideo(env, **video_kwargs)
+
     obs = env.get_observations()
 
     total_steps = args.max_steps if (args.max_steps is not None and args.max_steps > 0) else 10 * int(env.max_episode_length)

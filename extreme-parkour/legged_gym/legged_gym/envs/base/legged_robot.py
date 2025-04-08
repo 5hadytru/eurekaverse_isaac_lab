@@ -110,7 +110,6 @@ class LeggedRobot(DirectRLEnv):
         # allocate buffers
         self.obs_buf = torch.zeros(self.num_envs, self.num_obs, device=self.device, dtype=torch.float)
         self.rew_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.float)
-        self.time_out_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
         if self.num_privileged_obs is not None:
             self.privileged_obs_buf = torch.zeros(self.num_envs, self.num_privileged_obs, device=self.device, dtype=torch.float)
         else: 
@@ -205,7 +204,7 @@ class LeggedRobot(DirectRLEnv):
             self.extras["depth"] = self.depth_buffer[:, 0]
         self.extras["inc_goal"] = self.inc_goal
 
-        return self.obs_buf, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras
+        return (self.obs_buf, self.privileged_obs_buf), self.rew_buf, self.reset_term, self.reset_time_out, self.extras
 
     def _pre_physics_step(self, actions):
         """
@@ -383,19 +382,25 @@ class LeggedRobot(DirectRLEnv):
     def _get_dones(self):
         """ Check if environments need to be reset
         """
-        self.reset_buf = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        # time outs
+        self.reset_time_out = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
+
+        # terminations
         roll_cutoff = torch.abs(self.roll) > 1.5
         pitch_cutoff = torch.abs(self.pitch) > 1.5
         height_cutoff = self._robot.data.root_state_w[:, 2] < -0.25
         reach_goal_cutoff = self.cur_goal_idx >= self.cfg.terrain.num_goals
 
-        self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
-        self.time_out_buf |= reach_goal_cutoff
+        self.reset_term = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+        self.reset_term |= roll_cutoff
+        self.reset_term |= pitch_cutoff
+        self.reset_term |= height_cutoff
+        self.reset_term |= reach_goal_cutoff
 
-        self.reset_buf |= self.time_out_buf
-        self.reset_buf |= roll_cutoff
-        self.reset_buf |= pitch_cutoff
-        self.reset_buf |= height_cutoff
+        # terminations and time outs
+        self.reset_buf = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self.reset_buf |= self.reset_time_out
+        self.reset_buf |= self.reset_term
 
     def _reset_idx(self, env_ids):
         """ Reset some environments.
@@ -437,6 +442,8 @@ class LeggedRobot(DirectRLEnv):
         self.last_root_vel[:] = 0.
         self.feet_air_time[env_ids] = 0.
         self.reset_buf[env_ids] = 1
+        self.reset_term[env_ids] = 1
+        self.reset_time_out[env_ids] = 1
         self.obs_history_buf[env_ids, :, :] = 0.
         self.action_history_buf[env_ids, :, :] = 0.
         self.cur_goal_idx[env_ids] = 0
@@ -462,7 +469,7 @@ class LeggedRobot(DirectRLEnv):
             self.extras["episode"]["max_command_x"] = self.command_ranges["lin_vel_x"][1]
         # send timeout info to the algorithm
         if self.cfg.env.send_timeouts:
-            self.extras["time_outs"] = self.time_out_buf
+            self.extras["time_outs"] = self.reset_time_out
         
     def _get_rewards(self):
         """ Compute rewards

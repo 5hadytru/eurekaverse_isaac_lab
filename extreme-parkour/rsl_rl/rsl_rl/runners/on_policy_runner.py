@@ -143,7 +143,9 @@ class OnPolicyRunner:
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
                     actions = self.alg.act(obs, critic_obs, hist_encoding)
-                    obs, privileged_obs, rewards, dones, infos = self.env.step(actions)
+                    all_obs, rewards, reset_term, reset_time_out, infos = self.env.step(actions)
+                    dones = reset_term | reset_time_out
+                    obs, privileged_obs = all_obs
                     critic_obs = privileged_obs if privileged_obs is not None else obs
                     obs, critic_obs, rewards, dones = obs.to(self.device), critic_obs.to(self.device), rewards.to(self.device), dones.to(self.device)
                     self.alg.process_env_step(rewards, dones, infos)
