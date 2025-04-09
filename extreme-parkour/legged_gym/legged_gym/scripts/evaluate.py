@@ -284,8 +284,6 @@ def evaluate(args):
         dones = reset_term | reset_time_out
         obs, _ = all_obs
 
-        print(env.recording, env.episode_id)
-
         if args.replay_depth and t % env_cfg.depth.update_interval == 0:
             infos["depth"] = saved_depth[(t // env_cfg.depth.update_interval) % len(saved_depth)].to(device)
 
