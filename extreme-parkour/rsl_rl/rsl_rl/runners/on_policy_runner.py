@@ -58,25 +58,30 @@ class OnPolicyRunner:
         self.device = device
         self.env = env
 
+        try:
+            self.env_cfg = self.env.cfg
+        except: # RecordVideo env wrapper is a POS ... gotta access env.env
+            self.env_cfg = self.env.env.cfg
+
         print("Using MLP and Priviliged Env encoder ActorCritic structure")
-        actor_critic: ActorCriticRMA = ActorCriticRMA(self.env.cfg.env.n_proprio,
-                                                      self.env.cfg.env.n_scan,
-                                                      self.env.cfg.observation_space,
-                                                      self.env.cfg.env.n_priv_latent,
-                                                      self.env.cfg.env.n_priv,
-                                                      self.env.cfg.env.history_len,
-                                                      self.env.cfg.action_space,
+        actor_critic: ActorCriticRMA = ActorCriticRMA(self.env_cfg.env.n_proprio,
+                                                      self.env_cfg.env.n_scan,
+                                                      self.env_cfg.observation_space,
+                                                      self.env_cfg.env.n_priv_latent,
+                                                      self.env_cfg.env.n_priv,
+                                                      self.env_cfg.env.history_len,
+                                                      self.env_cfg.action_space,
                                                       **self.policy_cfg).to(self.device)
-        estimator = Estimator(input_dim=env.cfg.env.n_proprio, output_dim=env.cfg.env.n_priv, hidden_dims=self.estimator_cfg["hidden_dims"]).to(self.device)
+        estimator = Estimator(input_dim=self.env_cfg.env.n_proprio, output_dim=self.env_cfg.env.n_priv, hidden_dims=self.estimator_cfg["hidden_dims"]).to(self.device)
         # Depth encoder
         self.if_depth = self.depth_encoder_cfg["if_depth"]
         if self.if_depth:
             raise NotImplementedError("Depth not ported to Lab")
-            depth_backbone = DepthOnlyFCBackbone58x87(env.cfg.env.n_proprio, 
+            depth_backbone = DepthOnlyFCBackbone58x87(self.env_cfg.env.n_proprio, 
                                                     self.policy_cfg["scan_encoder_dims"][-1], 
                                                     self.depth_encoder_cfg["hidden_dims"],
                                                     )
-            depth_encoder = RecurrentDepthBackbone(depth_backbone, env.cfg, output_yaw=self.depth_encoder_cfg["train_direction_distillation"])
+            depth_encoder = RecurrentDepthBackbone(depth_backbone, self.env_cfg, output_yaw=self.depth_encoder_cfg["train_direction_distillation"])
             depth_encoder = depth_encoder.to(self.device)
             depth_actor = deepcopy(actor_critic.actor)
         else:
@@ -97,11 +102,11 @@ class OnPolicyRunner:
         self.dagger_update_freq = self.alg_cfg["dagger_update_freq"]
 
         self.alg.init_storage(
-            self.env.num_envs, 
+            self.env_cfg.scene.num_envs, 
             self.num_steps_per_env, 
-            [self.env.cfg.observation_space], 
-            [self.env.cfg.env.num_privileged_obs], 
-            [self.env.cfg.action_space],
+            [self.env_cfg.observation_space], 
+            [self.env_cfg.env.num_privileged_obs], 
+            [self.env_cfg.action_space],
         )
 
         self.learn = self.learn_RL if not self.if_depth else self.learn_vision

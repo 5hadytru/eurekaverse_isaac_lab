@@ -45,9 +45,10 @@ from time import time, sleep
 import pickle
 import copy
 
+from isaaclab.utils.dict import print_dict
+from isaaclab.app import AppLauncher
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.envs import *
-from legged_gym.utils import task_registry, add_shared_args
+from legged_gym.utils import task_registry, add_shared_args, RecordVideo
 from legged_gym.utils.helpers import get_checkpoint
 
 
@@ -82,8 +83,12 @@ args = parser.parse_args()
 #         args.num_envs = args.terrain_rows * args.terrain_cols
 
 args.script = "evaluate"
-app_launcher = AppLauncher(args_cli)
+if args.video:
+    args.enable_cameras = True
+app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
+
+from legged_gym.envs import *
 
 def evaluate(args):
     faulthandler.enable()
@@ -104,8 +109,8 @@ def evaluate(args):
         _, train_cfg = task_registry.get_cfgs(name=args.task)
     
     # If number of environments is too small, increase it to fill up each grid cell (relevant for distillation)
-    env_cfg.num_envs = max(env_cfg.num_envs, env_cfg.terrain.num_rows * env_cfg.terrain.num_cols)
-    env_cfg.depth.camera_num_envs = env_cfg.num_envs
+    env_cfg.scene.num_envs = max(env_cfg.scene.num_envs, env_cfg.terrain.num_rows * env_cfg.terrain.num_cols)
+    env_cfg.depth.camera_num_envs = env_cfg.scene.num_envs
     
     # Don't resample commands during an episode
     env_cfg.commands.resampling_time = 20
@@ -127,33 +132,37 @@ def evaluate(args):
         env_cfg.commands.ranges.lin_vel_y[0] = 0
 
     # prepare environment
-    env, _ = task_registry.make_env(args=args, name=args.task, render_mode="rgb_array" if args.video else None)
+    env, _ = task_registry.make_env(args=args, name=args.task, env_cfg=env_cfg, render_mode="rgb_array" if args.video else None)
+
+    obs = env.get_observations()
+    max_episode_length = env.max_episode_length
+    device = env.device
+    rew_term_keys = env.rew_term_sums.keys()
 
     if args.video:
         video_kwargs = {
-            "video_folder": os.path.join(load_dir, "videos", "eval"),
-            "episode_trigger": lambda episode_id: episode_id == 0,
+            "video_folder": os.path.join(load_dir, "eval_videos"),
+            "step_trigger": lambda step_id: step_id == 0,
             "disable_logger": False,
+            "video_length": 1000
         }
         print("[INFO] Recording videos during training.")
         print_dict(video_kwargs, nesting=4)
-        env = gym.wrappers.RecordVideo(env, **video_kwargs)
+        env = RecordVideo(env, **video_kwargs)
 
-    obs = env.get_observations()
-
-    total_steps = args.max_steps if (args.max_steps is not None and args.max_steps > 0) else 10 * int(env.max_episode_length)
+    total_steps = args.max_steps if (args.max_steps is not None and args.max_steps > 0) else 10 * int(max_episode_length)
 
     # Buffers for metric tracking
-    rew_sum_per_env = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
-    rew_terms_sum_per_env = {term: torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device) for term in env.rew_term_sums.keys()}
-    len_sum_per_env = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
-    goals_sum_per_env = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
-    sum_counter_per_env = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
-    edge_violation_sum_per_env = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
+    rew_sum_per_env = torch.zeros(env_cfg.scene.num_envs, dtype=torch.float, device=device)
+    rew_terms_sum_per_env = {term: torch.zeros(env_cfg.scene.num_envs, dtype=torch.float, device=device) for term in rew_term_keys}
+    len_sum_per_env = torch.zeros(env_cfg.scene.num_envs, dtype=torch.float, device=device)
+    goals_sum_per_env = torch.zeros(env_cfg.scene.num_envs, dtype=torch.float, device=device)
+    sum_counter_per_env = torch.zeros(env_cfg.scene.num_envs, dtype=torch.float, device=device)
+    edge_violation_sum_per_env = torch.zeros(env_cfg.scene.num_envs, dtype=torch.float, device=device)
 
-    # cur_rew_sum = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
-    cur_episode_length = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
-    cur_time_from_start = torch.zeros(env_cfg.num_envs, dtype=torch.float, device=env.device)
+    # cur_rew_sum = torch.zeros(env_cfg.scene.num_envs, dtype=torch.float, device=device)
+    cur_episode_length = torch.zeros(env_cfg.scene.num_envs, dtype=torch.float, device=device)
+    cur_time_from_start = torch.zeros(env_cfg.scene.num_envs, dtype=torch.float, device=device)
 
     # Set up loading config
     train_cfg.runner.resume = True
@@ -161,24 +170,24 @@ def evaluate(args):
     train_cfg.runner.checkpoint = args.checkpoint
 
     if args.use_jit:
-        policy = torch.jit.load(load_dir / "traced" / "policy_latest.jit").to(env.device)
-        depth_encoder = torch.jit.load(load_dir / "traced" / "depth_latest.jit").to(env.device)
+        policy = torch.jit.load(load_dir / "traced" / "policy_latest.jit").to(device)
+        depth_encoder = torch.jit.load(load_dir / "traced" / "depth_latest.jit").to(device)
         # parkour_actor = ParkourActor(device="cuda")
         # parkour_actor.load(load_dir)
         checkpoint = "jit"
     else:
         ppo_runner, train_cfg, _, loaded_dir, checkpoint = task_registry.make_alg_runner(env=env, args=args, name="go1", train_cfg=train_cfg, log_root=load_dir)
         assert load_dir == loaded_dir, f"Config loading directory {load_dir} is different from the runner loading directory {loaded_dir}!"
-        if env.cfg.depth.use_camera:
+        if env_cfg.depth.use_camera:
             raise NotImplementedError("Depth actor not ported to Lab")
-            policy = ppo_runner.get_depth_actor_inference_policy(device=env.device)
-            if env.cfg.depth.use_camera:
-                depth_encoder = ppo_runner.get_depth_encoder_inference_policy(device=env.device)
+            policy = ppo_runner.get_depth_actor_inference_policy(device=device)
+            if env_cfg.depth.use_camera:
+                depth_encoder = ppo_runner.get_depth_encoder_inference_policy(device=device)
         else:
-            policy = ppo_runner.get_inference_policy(device=env.device)
+            policy = ppo_runner.get_inference_policy(device=device)
     checkpoint_name = checkpoint.replace(".pt", "").replace("_", "-")
 
-    actions = torch.zeros(env_cfg.num_envs, 12, device=env.device, requires_grad=False)
+    actions = torch.zeros(env_cfg.scene.num_envs, 12, device=device, requires_grad=False)
     if env_cfg.depth.use_camera:
         infos = {
             "depth": env.depth_buffer.clone().cuda()[:, -1]
@@ -244,14 +253,14 @@ def evaluate(args):
             obs_replay.append(obs[0:1])
             action_replay.append(actions[0:1])
         else:
-            if env.cfg.depth.use_camera:
+            if env_cfg.depth.use_camera:
                 if infos["depth"] is not None:
-                    obs_student = obs[:, :env.cfg.env.n_proprio].clone()
+                    obs_student = obs[:, :env_cfg.env.n_proprio].clone()
                     obs_student[:, 5:7] = 0
                     with torch.no_grad():
                         depth_encoder_output = depth_encoder(infos["depth"], obs_student)
                     # depth_latent = depth_latent_and_yaw[:, :-2]
-                    # if env.cfg.depth.use_direction_distillation:
+                    # if env_cfg.depth.use_direction_distillation:
                     #     yaw = depth_latent_and_yaw[:, -2:]
                     #     obs[:, 5:7] = 1.5 * yaw
 
@@ -271,19 +280,21 @@ def evaluate(args):
             else:
                 actions = policy(obs.detach(), hist_encoding=True, scandots_latent=depth_latent)
             
-        obs, _, rews, dones, infos = env.step(actions.detach())
+        all_obs, rewards, reset_term, reset_time_out, infos = env.step(actions.detach())
+        dones = reset_term | reset_time_out
+        obs, _ = all_obs
+
+        print(env.recording, env.episode_id)
 
         if args.replay_depth and t % env_cfg.depth.update_interval == 0:
-            infos["depth"] = saved_depth[(t // env_cfg.depth.update_interval) % len(saved_depth)].to(env.device)
-
-        lookat_id = env.lookat_id
+            infos["depth"] = saved_depth[(t // env_cfg.depth.update_interval) % len(saved_depth)].to(device)
 
         # Log stuff
         # cur_rew_sum += rews
         cur_rew_sums = infos["rew_sums"]
         cur_reward_term_sums = infos["rew_term_sums"]
         cur_goal_idx = infos["cur_goal_idx"]
-        feet_at_edge = env.feet_at_edge.clone().float()
+        feet_at_edge = env.feet_at_edge.clone().float() if not args.video else env.env.feet_at_edge.clone().float()
         cur_episode_length += 1
         cur_time_from_start += 1
 
@@ -324,13 +335,16 @@ def evaluate(args):
     # config.yaml (it will be range(cfg.num_terrain_types))
     # there will be variations repeated if LeggedRobotCfg.terrain.num_cols > cfg.num_terrain_types
     # the range of difficulties will be range(LeggedRobotCfg.terrain.num_rows)
-    terrain_cells = set(zip(env.env_class.cpu().numpy().tolist(), env.terrain_levels.cpu().numpy().tolist()))
+    env_class = env.env_class if not args.video else env.env.env_class
+    terrain_levels = env.terrain_levels if not args.video else env.env.terrain_levels
+    terrain_cells = set(zip(env_class.cpu().numpy().tolist(), terrain_levels.cpu().numpy().tolist()))
     mean_rew_per_cell_buffer, mean_rew_terms_per_cell_buffer, mean_len_per_cell_buffer, mean_goals_per_cell_buffer, mean_edge_violation_per_cell_buffer = {}, {}, {}, {}, {}
     mean_rew_terms_per_cell_buffer = {term: {} for term in rew_terms_sum_per_env.keys()}
     sum_counter_per_env[sum_counter_per_env == 0] = 1  # Avoid division by zero
     for cell in terrain_cells:
         terrain_type, terrain_level = cell
-        ids = (env.env_class == terrain_type) & (env.terrain_levels == terrain_level)
+        ids = (env_class == terrain_type) & (terrain_levels == terrain_level)
+        ids = ids.cpu()
         mean_rew_per_cell_buffer[cell] = torch.sum(rew_sum_per_env[ids]) / torch.sum(sum_counter_per_env[ids])
         for term in rew_terms_sum_per_env.keys():
             mean_rew_terms_per_cell_buffer[term][cell] = torch.sum(rew_terms_sum_per_env[term][ids]) / torch.sum(sum_counter_per_env[ids])
@@ -429,8 +443,8 @@ def evaluate(args):
     if "cell" in granularities:
         goals_mean_per = aggregate_cells(mean_goals_per_cell_buffer, "cell")
 
-        num_terrains = torch.unique(env.env_class).numel()
-        num_levels = torch.unique(env.terrain_levels).numel()
+        num_terrains = torch.unique(env_class).numel()
+        num_levels = torch.unique(terrain_levels).numel()
         per_row = min(5, num_terrains)
         fig, axs = plt.subplots(num_terrains // per_row, per_row, figsize=(24, 8))
         keys = sorted(list(goals_mean_per.keys()))

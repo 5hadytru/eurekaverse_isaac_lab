@@ -789,6 +789,10 @@ class LeggedRobot(DirectRLEnv):
             self.height_points = self._init_height_points()
         self.measured_heights = 0
 
+        self.reset_buf = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self.reset_term = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self.reset_time_out = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+
         self.height_update_interval = 1
         if hasattr(self.cfg.env, "height_update_dt"):
             self.height_update_interval = int(self.cfg.env.height_update_dt / (self.cfg.sim.dt * self.cfg.decimation))

@@ -1,5 +1,5 @@
 from isaaclab.utils.configclass import configclass
-from isaaclab.envs import DirectRLEnvCfg
+from isaaclab.envs import DirectRLEnvCfg, ViewerCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg
 from isaaclab.sim import SimulationCfg, PhysxCfg
@@ -404,11 +404,6 @@ class CustomRewardsCfg:
     base_height_target = 1.
     max_contact_force = 40. # forces above this value are penalized
 
-class CustomViewerCfg:
-    ref_env = 0
-    pos = [10, 0, 6]  # [m]
-    lookat = [11., 5, 3.]  # [m]
-
 @configclass
 class LeggedRobotCfg(DirectRLEnvCfg):
     sim: SimulationCfg = SimulationCfg(
@@ -459,7 +454,7 @@ class LeggedRobotCfg(DirectRLEnvCfg):
     asset = CustomAssetCfg()
     domain_rand = CustomDomainRandCfg()
     rewards = CustomRewardsCfg()
-    viewer = CustomViewerCfg()
+    viewer: ViewerCfg = ViewerCfg()
 
 
 class LeggedRobotCfgPPO():
