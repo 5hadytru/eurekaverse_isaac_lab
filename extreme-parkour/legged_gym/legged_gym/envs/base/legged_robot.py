@@ -843,11 +843,11 @@ class LeggedRobot(DirectRLEnv):
             dynamic_friction=1.0,
             restitution=0.0,
             friction_combine_mode="multiply",
-            restitution_combine_mode="average"
+            restitution_combine_mode="multiply"
         )
 
         visual_material_cfg = sim_utils.PreviewSurfaceCfg(
-            diffuse_color=(1.0, 0.0, 0.0)
+            diffuse_color=(0.0, 0.0, 1.0)
         )
         
         self._get_initial_env_origins()
@@ -997,15 +997,15 @@ class LeggedRobot(DirectRLEnv):
             prim_path="/Visuals/myMarkers",
             markers={
                 "sphere": sim_utils.SphereCfg(
-                    radius=0.5,
+                    radius=0.1,
                     visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0)),
                 ),
                 "sphere_cur": sim_utils.SphereCfg(
-                    radius=0.5,
+                    radius=0.1,
                     visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),
                 ),
                 "sphere_reached": sim_utils.SphereCfg(
-                    radius=0.5,
+                    radius=0.1,
                     visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 0.0, 1.0)),
                 ),
                 "arrow1": sim_utils.UsdFileCfg(
@@ -1210,7 +1210,8 @@ class LeggedRobot(DirectRLEnv):
     def _reward_collision(self):
         penalised_contacts = torch.cat([self.contact_forces_CALF, self.contact_forces_THIGH], dim=1)
         assert list(penalised_contacts.size()) == [self.num_envs, 8, 3], str(penalised_contacts.size())
-        return torch.sum(1.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
+        # return torch.sum(1.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
+        return torch.sum(0.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
 
     def _reward_action_rate(self):
         return torch.norm(self.last_actions - self.actions, dim=1)

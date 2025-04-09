@@ -232,7 +232,7 @@ class Terrain:
         # Add roughness to terrain
         max_height = (self.cfg.height[1] - self.cfg.height[0]) * 0.5 + self.cfg.height[0]
         height = random.uniform(self.cfg.height[0], max_height)
-        random_uniform_terrain(terrain, min_height=-height, max_height=height, step=0.005, downsampled_scale=self.cfg.downsampled_scale)
+        terrain = random_uniform_terrain(terrain, min_height=-height, max_height=height, step=0.005, downsampled_scale=self.cfg.downsampled_scale)
 
         return terrain
 

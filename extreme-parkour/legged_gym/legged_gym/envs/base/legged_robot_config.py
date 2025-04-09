@@ -44,7 +44,7 @@ UNITREE_GO1_CFG = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.42),
+        pos=(0.0, 0.0, 0.0),
         joint_pos={ # = target angles [rad] when action = 0.0
             'FL_hip_joint': 0.1,   # [rad]
             'RL_hip_joint': 0.1,   # [rad]
@@ -427,7 +427,9 @@ class LeggedRobotCfg(DirectRLEnvCfg):
             gpu_max_rigid_contact_count=2**24,
             # num_subscenes is no longer needed
             # contact_collection is no longer needed
-    ))
+        ),
+        render_interval=4
+    )
 
     robot = UNITREE_GO1_CFG
 
@@ -454,7 +456,7 @@ class LeggedRobotCfg(DirectRLEnvCfg):
     asset = CustomAssetCfg()
     domain_rand = CustomDomainRandCfg()
     rewards = CustomRewardsCfg()
-    viewer: ViewerCfg = ViewerCfg(lookat=[100.0,100.0,0.0], eye=[100.0,100.0,10.0])
+    viewer: ViewerCfg = ViewerCfg(origin_type="env", env_index=10, lookat=[0.0,0.0,0.0], eye=[7.5,7.5,7,5])
 
 
 class LeggedRobotCfgPPO():
