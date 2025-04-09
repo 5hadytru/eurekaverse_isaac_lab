@@ -38,6 +38,8 @@ from isaaclab.envs import DirectRLEnv
 import isaaclab.sim as sim_utils
 from isaaclab.assets.articulation import Articulation
 from isaaclab.utils.math import quat_rotate_inverse, quat_apply, quat_from_euler_xyz, quat_apply_yaw, wrap_to_pi
+from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
+from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR, ISAAC_NUCLEUS_DIR
 
 import torch
 from torch import Tensor
@@ -366,18 +368,17 @@ class LeggedRobot(DirectRLEnv):
         self.last_torques[:] = self._robot.data.applied_torque[:].clone()
         self.last_root_vel[:] = self._robot.data.root_state_w[:, 7:13].clone()
 
-        if self.viewer and self.enable_viewer_sync and self.debug_viz:
-            raise NotImplementedError("Debugging viz not implemented in Isaac Lab; legacy code below")
+        if self.debug_viz:
             # self.gym.clear_lines(self.viewer)
-            # self._draw_goals()
-            # self._draw_feet()
-            # if self.cfg.depth.use_camera:
-            #     window_name = "Depth (latest, delayed)"
-            #     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-            #     latest_depth = self.depth_buffer[self.lookat_id, -1].cpu().numpy() + 0.5
-            #     delayed_depth = self.depth_buffer[self.lookat_id, 0].cpu().numpy() + 0.5
-            #     cv2.imshow(window_name, np.concatenate((latest_depth, delayed_depth), axis=0))
-            #     cv2.waitKey(1)
+            self._draw_goals_and_feet()
+            if self.cfg.depth.use_camera:
+                raise Exception("Have not tested this stuff")
+                window_name = "Depth (latest, delayed)"
+                cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+                latest_depth = self.depth_buffer[self.lookat_id, -1].cpu().numpy() + 0.5
+                delayed_depth = self.depth_buffer[self.lookat_id, 0].cpu().numpy() + 0.5
+                cv2.imshow(window_name, np.concatenate((latest_depth, delayed_depth), axis=0))
+                cv2.waitKey(1)
 
     def _get_dones(self):
         """ Check if environments need to be reset
@@ -582,7 +583,7 @@ class LeggedRobot(DirectRLEnv):
         # add articulation to scene
         self.scene.articulations["robot"] = self._robot
         # add lights
-        light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
+        light_cfg = sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
 
     #------------- Callbacks --------------
@@ -846,7 +847,7 @@ class LeggedRobot(DirectRLEnv):
         )
 
         visual_material_cfg = sim_utils.PreviewSurfaceCfg(
-            diffuse_color=(0.2, 0.3, 0.4)
+            diffuse_color=(1.0, 0.0, 0.0)
         )
         
         self._get_initial_env_origins()
@@ -990,6 +991,101 @@ class LeggedRobot(DirectRLEnv):
             self.cfg.terrain.curriculum = False
 
         self.cfg.domain_rand.push_interval = np.ceil(self.cfg.domain_rand.push_interval_s / self.dt)
+
+    def _draw_goals_and_feet(self):
+        marker_cfg = VisualizationMarkersCfg(
+            prim_path="/Visuals/myMarkers",
+            markers={
+                "sphere": sim_utils.SphereCfg(
+                    radius=0.5,
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0)),
+                ),
+                "sphere_cur": sim_utils.SphereCfg(
+                    radius=0.5,
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),
+                ),
+                "sphere_reached": sim_utils.SphereCfg(
+                    radius=0.5,
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 0.0, 1.0)),
+                ),
+                "arrow1": sim_utils.UsdFileCfg(
+                    usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/arrow_x.usd",
+                    scale=(1.0, 0.25, 0.25),
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1, 0.35, 0.25)),
+                ),
+                "arrow2": sim_utils.UsdFileCfg(
+                    usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/arrow_x.usd",
+                    scale=(1.0, 0.25, 0.25),
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0, 1.0, 0.5)),
+                ),
+                "feet_sphere1": sim_utils.SphereCfg(
+                    radius=0.1,
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0)),
+                ),
+                "feet_sphere2": sim_utils.SphereCfg(
+                    radius=0.1,
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),
+                ),
+            }
+        )
+
+        visualizer = VisualizationMarkers(marker_cfg)
+
+        marker_indices = []
+        marker_translations = []
+
+        if not self.cfg.depth.use_camera:
+            # Only for scandot poliices, since wireframe shows up on depth camera for some reason
+            goals = self.terrain_goals[self.terrain_levels[self.lookat_id], self.terrain_types[self.lookat_id]].cpu().numpy()
+            for i, goal in enumerate(goals):
+                goal_xy = goal[:2] + self.terrain.cfg.border_size
+                pts = (goal_xy/self.terrain.cfg.horizontal_scale).astype(int)
+                if pts[0] < 0 or pts[0] >= self.terrain.tot_rows or pts[1] < 0 or pts[1] >= self.terrain.tot_cols:
+                    print("Goal out of bounds!")
+                    continue
+                goal_z = self.height_samples[pts[0], pts[1]].cpu().item() * self.terrain.cfg.vertical_scale
+                coords = [goal[0], goal[1], goal_z]
+                if i == self.cur_goal_idx[self.lookat_id].cpu().item():
+                    marker_indices.append(1)
+                    marker_translations.append(coords)
+                    if self.reached_goal_ids[self.lookat_id]:
+                        marker_indices.append(2)
+                        marker_translations.append(coords)
+                else:
+                    marker_indices.append(0)
+                    marker_translations.append(coords)
+
+            norm = torch.norm(self.target_pos_rel, dim=-1, keepdim=True)
+            target_vec_norm = self.target_pos_rel / (norm + 1e-5)
+            next_norm = torch.norm(self.next_target_pos_rel, dim=-1, keepdim=True)
+            next_target_vec_norm = self.next_target_pos_rel / (next_norm + 1e-5)
+
+            # pose_robot = self._robot.data.root_state_w[self.lookat_id, :3].cpu().numpy()
+            # for i in range(5):
+            #     pose_arrow = pose_robot[:2] + 0.1*(i+3) * target_vec_norm[self.lookat_id, :2].cpu().numpy()
+            #     coords = [pose_arrow[0], pose_arrow[1], pose_robot[2]]
+            #     marker_indices.append(3)
+            #     marker_translations.append(coords)
+            
+            # for i in range(5):
+            #     pose_arrow = pose_robot[:2] + 0.2*(i+3) * next_target_vec_norm[self.lookat_id, :2].cpu().numpy()
+            #     coords = [pose_arrow[0], pose_arrow[1], pose_robot[2]]
+            #     marker_indices.append(4)
+            #     marker_translations.append(coords)
+
+        # if hasattr(self, 'feet_at_edge'):
+        #     feet_pos = self._robot.data.body_state_w[:, self.feet_indices, :3].cpu().numpy()
+        #     for i in range(4):
+        #         coords = [feet_pos[self.lookat_id, i, 0], feet_pos[self.lookat_id, i, 1], feet_pos[self.lookat_id, i, 2]]
+        #         if self.feet_at_edge[self.lookat_id, i]:
+        #             marker_indices.append(5)
+        #         else:
+        #             marker_indices.append(6)
+        #         marker_translations.append(coords)
+
+        marker_translations = np.array(marker_translations)
+        # print(marker_translations.shape)
+        visualizer.visualize(marker_indices=marker_indices, translations=marker_translations)
 
     def _init_height_points(self):
         """ Returns points at which the height measurments are sampled (in base frame)

@@ -454,7 +454,7 @@ class LeggedRobotCfg(DirectRLEnvCfg):
     asset = CustomAssetCfg()
     domain_rand = CustomDomainRandCfg()
     rewards = CustomRewardsCfg()
-    viewer: ViewerCfg = ViewerCfg()
+    viewer: ViewerCfg = ViewerCfg(lookat=[100.0,100.0,0.0], eye=[100.0,100.0,10.0])
 
 
 class LeggedRobotCfgPPO():
