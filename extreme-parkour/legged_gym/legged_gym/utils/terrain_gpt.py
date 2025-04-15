@@ -73,6 +73,7 @@ class TrimeshTerrainImporter:
         self, 
         vertices:np.ndarray,
         triangles:np.ndarray,
+        translation,
         initial_env_origins:torch.Tensor, 
         physics_material_cfg, 
         visual_material_cfg,
@@ -80,6 +81,7 @@ class TrimeshTerrainImporter:
     ):
         self.vertices = vertices
         self.triangles = triangles
+        self.translation = translation
         self.env_origins = initial_env_origins.clone()
         self.visual_material = visual_material_cfg
         self.physics_material = physics_material_cfg
@@ -94,7 +96,7 @@ class TrimeshTerrainImporter:
         prim_path = f"/World/Terrain/terrain_{str(self.device).replace(':', '_')}"
         mesh = trimesh.Trimesh(self.vertices, self.triangles)
         create_prim_from_mesh(
-            prim_path, mesh, visual_material=self.visual_material, physics_material=self.physics_material, translation=(-self.terrain.cfg.border_size, -self.terrain.cfg.border_size, 0.0)
+            prim_path, mesh, visual_material=self.visual_material, physics_material=self.physics_material, translation=self.translation
         )
 
 class Terrain:
