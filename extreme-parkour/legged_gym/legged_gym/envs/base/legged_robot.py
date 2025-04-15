@@ -763,6 +763,7 @@ class LeggedRobot(DirectRLEnv):
         self.forward_vec = torch.from_numpy(np.array([1., 0., 0.], dtype=np.float32)).to(self.device).repeat((self.num_envs, 1))
         self._actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self._last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self._last_torques = torch.zeros_like(self._robot.data.applied_torque)
         self.last_dof_vel = torch.zeros_like(self._robot.data.joint_vel)
         self.last_root_vel = torch.zeros_like(self._robot.data.root_state_w[:, 7:13])
 
