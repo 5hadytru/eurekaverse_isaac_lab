@@ -908,6 +908,7 @@ class LeggedRobot(DirectRLEnv):
         # add Go1 to scene
         self._robot = Articulation(self.cfg.robot)
         self.attach_camera_to_robot()
+        self.scene.articulations["robot"] = self._robot
 
         # base_init_state_list = self.cfg.init_state.pos + self.cfg.init_state.rot + self.cfg.init_state.lin_vel + self.cfg.init_state.ang_vel
         # self.base_init_state = to_torch(base_init_state_list, device=self.device, requires_grad=False)
