@@ -856,6 +856,7 @@ class LeggedRobot(DirectRLEnv):
         terrain_importer = TrimeshTerrainImporter(
             vertices=self.terrain.vertices,
             triangles=self.terrain.triangles,
+            translation=(-self.terrain.cfg.border_size, -self.terrain.cfg.border_size, 0.0),
             initial_env_origins=self.initial_env_origins, 
             physics_material_cfg=physics_material_cfg, 
             visual_material_cfg=visual_material_cfg,
