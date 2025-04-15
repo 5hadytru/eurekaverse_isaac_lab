@@ -97,7 +97,7 @@ class LeggedRobot(DirectRLEnv):
         assert len(self.hip_indices) == 4, f"Could not find 4 hips (searched {body_names})! Is 'hip' correct?"
         
         self.cfg = cfg
-        self.debug_viz = True
+        self.debug_viz = False
         self.init_done = False
         self._parse_cfg(self.cfg)
 
