@@ -96,7 +96,7 @@ class TrimeshTerrainImporter:
         prim_path = f"/World/Terrain/terrain_{str(self.device).replace(':', '_')}"
         mesh = trimesh.Trimesh(self.vertices, self.triangles)
         create_prim_from_mesh(
-            prim_path, mesh, visual_material=self.visual_material, physics_material=self.physics_material #, translation=self.translation
+            prim_path, mesh, visual_material=self.visual_material, physics_material=self.physics_material, translation=self.translation
         )
 
 class Terrain:
