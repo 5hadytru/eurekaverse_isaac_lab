@@ -653,8 +653,8 @@ class LeggedRobot(DirectRLEnv):
         Args:
             env_ids (List[int]): Environemnt ids
         """
-        new_joint_pos = self._robot.data.default_joint_pos[env_ids, :] + torch_rand_float(0., 0.9, (len(env_ids), self.num_dof), device=self.device)
-        new_joint_vel = torch.zeros((len(env_ids), self.num_dof), device=self.device)
+        new_joint_pos = self._robot.data.default_joint_pos[env_ids].to(self.device)
+        new_joint_vel = self._robot.data.default_joint_vel[env_ids].to(self.device)
 
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         self._robot.write_joint_state_to_sim(new_joint_pos, new_joint_vel, None, env_ids)
