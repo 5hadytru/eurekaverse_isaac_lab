@@ -164,6 +164,9 @@ class LeggedRobot(DirectRLEnv):
 
             # set actions into simulator
             self.scene.write_data_to_sim()
+
+            self.torques = self._robot.data.applied_torque.clone() # for rewards
+            
             # simulate
             self.sim.step(render=False)
 
@@ -340,8 +343,6 @@ class LeggedRobot(DirectRLEnv):
         
         self._update_goals()
         self._post_physics_step_callback()
-
-        self.torques = self._robot.data.applied_torque.clone() # for rewards
 
         # compute observations, rewards, resets, ...
         self._get_dones()
