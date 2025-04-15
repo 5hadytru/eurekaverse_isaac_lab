@@ -359,9 +359,9 @@ class LeggedRobot(DirectRLEnv):
 
         self._get_observations()
 
-        self.last_actions[:] = self.actions[:]
+        self._last_actions[:] = self._actions[:]
         self.last_dof_vel[:] = self._robot.data.joint_vel[:].clone()
-        self.last_torques[:] = self._robot.data.applied_torque[:].clone()
+        self._last_torques[:] = self._robot.data.applied_torque[:].clone()
         self.last_root_vel[:] = self._robot.data.root_state_w[:, 7:13].clone()
 
         if self.debug_viz:
@@ -433,9 +433,9 @@ class LeggedRobot(DirectRLEnv):
         self.extras["cur_goal_idx"] = self.cur_goal_idx.clone()
 
         # reset buffers
-        self.last_actions[env_ids] = 0.
+        self._last_actions[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
-        self.last_torques[env_ids] = 0.
+        self._last_torques[env_ids] = 0.
         self.last_root_vel[:] = 0.
         self.feet_air_time[env_ids] = 0.
         self.reset_buf[env_ids] = 1
@@ -761,8 +761,8 @@ class LeggedRobot(DirectRLEnv):
         self.extras = {}
         self.gravity_vec = torch.from_numpy(np.array([0, 0, -1], dtype=np.float32)).to(self.device).repeat((self.num_envs, 1))
         self.forward_vec = torch.from_numpy(np.array([1., 0., 0.], dtype=np.float32)).to(self.device).repeat((self.num_envs, 1))
-        self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-        self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self._actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self._last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_dof_vel = torch.zeros_like(self._robot.data.joint_vel)
         self.last_root_vel = torch.zeros_like(self._robot.data.root_state_w[:, 7:13])
 
