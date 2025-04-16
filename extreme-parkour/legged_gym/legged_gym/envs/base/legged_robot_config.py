@@ -31,16 +31,13 @@ UNITREE_GO1_CFG = ArticulationCfg(
         usd_path=f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/Go1/go1.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            rigid_body_enabled=True,
             disable_gravity=False,
-            retain_accelerations=False,
-            linear_damping=0.0,
-            angular_damping=0.0,
             max_linear_velocity=1000.0,
             max_angular_velocity=1000.0,
-            max_depenetration_velocity=1.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=False, solver_position_iteration_count=4, solver_velocity_iteration_count=0
+            enabled_self_collisions=True, solver_position_iteration_count=4, solver_velocity_iteration_count=0
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
@@ -73,7 +70,7 @@ UNITREE_GO1_CFG = ArticulationCfg(
 @configclass
 class ContactSensorSceneCfg(InteractiveSceneCfg):
     num_envs = 6144
-    env_spacing=3.0
+    env_spacing=5.0
 
     contact_forces_FOOT = ContactSensorCfg(
         prim_path="{ENV_REGEX_NS}/Robot/.*_foot", update_period=0.0, history_length=1, debug_vis=True

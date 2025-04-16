@@ -87,16 +87,17 @@ class TrimeshTerrainImporter:
         self.physics_material = physics_material_cfg
         self.device = device
 
+        self.prim_path = "/World/Terrain"
+
         self.import_mesh()
 
     def import_mesh(self):
         """
         Create a trimesh.Trimesh object -> store as USD prim
         """
-        prim_path = f"/World/Terrain/terrain_{str(self.device).replace(':', '_')}"
         mesh = trimesh.Trimesh(self.vertices, self.triangles)
         create_prim_from_mesh(
-            prim_path, mesh, visual_material=self.visual_material, physics_material=self.physics_material, translation=self.translation
+            self.prim_path, mesh, visual_material=self.visual_material, physics_material=self.physics_material, translation=self.translation
         )
 
 class Terrain:

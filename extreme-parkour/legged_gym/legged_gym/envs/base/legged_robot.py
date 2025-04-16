@@ -176,6 +176,8 @@ class LeggedRobot(DirectRLEnv):
             # update buffers at sim dt
             self.scene.update(dt=self.physics_dt)
 
+            # print(f"Avg root z: {torch.mean(self._robot.data.root_state_w[:, 2])} max: {torch.max(self._robot.data.root_state_w[:, 2])} min: {torch.min(self._robot.data.root_state_w[:, 2])}")
+
         # post-step:
         # -- update env counters (used for curriculum generation)
         self.episode_length_buf += 1  # step in current episode (per env)
@@ -385,7 +387,8 @@ class LeggedRobot(DirectRLEnv):
         height_cutoff = self._robot.data.root_state_w[:, 2] < -0.25
         reach_goal_cutoff = self.cur_goal_idx >= self.cfg.terrain.num_goals
 
-        print(f"Roll cutoff: {roll_cutoff.sum()}, pitch: {pitch_cutoff.sum()}, height: {height_cutoff.sum()}, reached goal: {reach_goal_cutoff.sum()}")
+        if height_cutoff.sum() > 0:
+            print(f"Height: {height_cutoff.sum()}")
 
         self.reset_term = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
         self.reset_term |= roll_cutoff
@@ -575,10 +578,9 @@ class LeggedRobot(DirectRLEnv):
         self._init_robot()
 
         # clone, filter, and replicate
-        self.scene.clone_environments(copy_from_source=False)
-        self.scene.filter_collisions(global_prim_paths=[])
-        # add articulation to scene
         self.scene.articulations["robot"] = self._robot
+        self.scene.clone_environments(copy_from_source=False)
+        self.scene.filter_collisions(global_prim_paths=[self.scene._terrain.prim_path + "/mesh"])
         # add lights
         light_cfg = sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
