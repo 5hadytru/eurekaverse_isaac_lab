@@ -97,7 +97,7 @@ class LeggedRobot(DirectRLEnv):
         assert len(self.hip_indices) == 4, f"Could not find 4 hips (searched {body_names})! Is 'hip' correct?"
         
         self.cfg = cfg
-        self.debug_viz = False
+        self.debug_viz = True
         self.init_done = False
         self._parse_cfg(self.cfg)
 
@@ -159,12 +159,10 @@ class LeggedRobot(DirectRLEnv):
         for _ in range(self.cfg.decimation):
             self._sim_step_counter += 1
 
-            # this logic would go in _apply_action in the case of a from-scratch Isaac Lab DirectRLEnv impl.
             self._apply_action()
 
             # set actions into simulator
             self.scene.write_data_to_sim()
-            
             # simulate
             self.sim.step(render=False)
 
@@ -217,15 +215,15 @@ class LeggedRobot(DirectRLEnv):
         actions = torch.clip(actions, -clip_actions, clip_actions)
 
         self.action_history_buf = torch.cat([self.action_history_buf[:, 1:].clone(), actions[:, None, :].clone()], dim=1)
-        self._actions = actions.clone()
-        self._processed_actions = self.cfg.control.action_scale * self._actions + self._robot.data.default_joint_pos
+        self.actions = actions * self.cfg.control.action_scale
 
     def _apply_action(self):
         """
         Apply actions to the robot by setting joint angle targets before write_data_to_sim is called
         During write_data_to_sim, torques are computed (e.g, in the ActuatorNetMLP class)
         """
-        self._robot.set_joint_position_target(self._processed_actions)
+        joint_pos_target = self._robot.data.default_joint_pos + self.actions
+        self._robot.set_joint_position_target(joint_pos_target)
 
     def get_history_observations(self):
         return self.obs_history_buf
@@ -315,7 +313,7 @@ class LeggedRobot(DirectRLEnv):
 
         norm = torch.norm(self.target_pos_rel, dim=-1, keepdim=True)
         target_vec_norm = self.target_pos_rel / (norm + 1e-5)
-        self.target_yaw = torch.atan2(target_vec_norm[:, 1], target_vec_norm[:, 0])
+        self.target_yaw = torch.atan2(target_vec_norm[:, 1], target_vec_norm[:, 0]) # target direction in radians
 
         norm = torch.norm(self.next_target_pos_rel, dim=-1, keepdim=True)
         target_vec_norm = self.next_target_pos_rel / (norm + 1e-5)
@@ -328,6 +326,10 @@ class LeggedRobot(DirectRLEnv):
         """
         # prepare quantities
         self.base_quat[:] = self._robot.data.root_state_w[:, 3:7].clone()
+        self.base_lin_vel[:] = quat_rotate_inverse(self.base_quat, self._robot.data.root_state_w[:, 7:10])
+        self.base_ang_vel[:] = quat_rotate_inverse(self.base_quat, self._robot.data.root_state_w[:, 10:13])
+        self.projected_gravity[:] = quat_rotate_inverse(self.base_quat, self.gravity_vec)
+        self.base_lin_acc = (self._robot.data.root_state_w[:, 7:10] - self.last_root_vel[:, :3]) / self.dt
 
         self.roll, self.pitch, self.yaw = euler_from_quaternion(self.base_quat)
 
@@ -337,6 +339,8 @@ class LeggedRobot(DirectRLEnv):
         
         self._update_goals()
         self._post_physics_step_callback()
+
+        self.torques = self._robot.data.applied_torque.clone() # for rewards
 
         # compute observations, rewards, resets, ...
         self._get_dones()
@@ -358,8 +362,10 @@ class LeggedRobot(DirectRLEnv):
 
         self._get_observations()
 
+        self.last_actions[:] = self.actions[:].clone()
         self.last_dof_vel[:] = self._robot.data.joint_vel[:].clone()
-        self._last_torques[:] = self._robot.data.applied_torque[:].clone()
+        self.last_torques[:] = self._robot.data.applied_torque[:].clone()
+        self.last_root_vel[:] = self._robot.data.root_state_w[:, 7:13].clone()
 
         if self.debug_viz:
             # self.gym.clear_lines(self.viewer)
@@ -384,8 +390,6 @@ class LeggedRobot(DirectRLEnv):
         pitch_cutoff = torch.abs(self.pitch) > 1.5
         height_cutoff = self._robot.data.root_state_w[:, 2] < -0.25
         reach_goal_cutoff = self.cur_goal_idx >= self.cfg.terrain.num_goals
-
-        print(f"Roll cutoff: {roll_cutoff.sum()}, pitch: {pitch_cutoff.sum()}, height: {height_cutoff.sum()}, reached goal: {reach_goal_cutoff.sum()}")
 
         self.reset_term = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
         self.reset_term |= roll_cutoff
@@ -432,9 +436,10 @@ class LeggedRobot(DirectRLEnv):
         self.extras["cur_goal_idx"] = self.cur_goal_idx.clone()
 
         # reset buffers
-        self._previous_actions[env_ids] = 0.
+        self.last_actions[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
-        self._last_torques[env_ids] = 0.
+        self.last_torques[env_ids] = 0.
+        self.last_root_vel[:] = 0.
         self.feet_air_time[env_ids] = 0.
         self.reset_buf[env_ids] = 1
         self.reset_term[env_ids] = 1
@@ -493,9 +498,6 @@ class LeggedRobot(DirectRLEnv):
         """ 
         Computes observations
         """
-        self._previous_actions = self._actions.clone()
-        self._last_torques = self._robot.data.applied_torque.clone()
-        
         imu_obs = torch.stack((self.roll, self.pitch), dim=1)
         if self.global_counter % 5 == 0:
             self.delta_yaw = self.target_yaw - self.yaw
@@ -503,7 +505,7 @@ class LeggedRobot(DirectRLEnv):
 
         # NOTE: This is proprioception and a few other inputs, but we call it proprioception for simplicity
         proprio = torch.cat((
-            self._robot.data.root_ang_vel_b  * self.obs_scales.ang_vel,
+            self.base_ang_vel  * self.obs_scales.ang_vel,
             imu_obs,
             self.delta_yaw[:, None],
             self.delta_next_yaw[:, None],
@@ -515,9 +517,9 @@ class LeggedRobot(DirectRLEnv):
         ), dim=-1)
         assert proprio.shape[1] == self.cfg.env.n_proprio
 
-        priv_explicit = torch.cat((self._robot.data.root_lin_vel_b * self.obs_scales.lin_vel,
-                                   0 * self._robot.data.root_lin_vel_b,
-                                   0 * self._robot.data.root_lin_vel_b), dim=-1)
+        priv_explicit = torch.cat((self.base_lin_vel * self.obs_scales.lin_vel,
+                                   0 * self.base_lin_vel,
+                                   0 * self.base_lin_vel), dim=-1)
         priv_latent = torch.cat((
             self.mass_params_tensor,
             self.friction_coeffs_tensor,
@@ -649,8 +651,8 @@ class LeggedRobot(DirectRLEnv):
         Args:
             env_ids (List[int]): Environemnt ids
         """
-        new_joint_pos = self._robot.data.default_joint_pos[env_ids].to(self.device)
-        new_joint_vel = self._robot.data.default_joint_vel[env_ids].to(self.device)
+        new_joint_pos = self._robot.data.default_joint_pos[env_ids, :] + torch_rand_float(0., 0.9, (len(env_ids), self.num_dof), device=self.device)
+        new_joint_vel = torch.zeros((len(env_ids), self.num_dof), device=self.device)
 
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         self._robot.write_joint_state_to_sim(new_joint_pos, new_joint_vel, None, env_ids)
@@ -759,10 +761,12 @@ class LeggedRobot(DirectRLEnv):
         self.extras = {}
         self.gravity_vec = torch.from_numpy(np.array([0, 0, -1], dtype=np.float32)).to(self.device).repeat((self.num_envs, 1))
         self.forward_vec = torch.from_numpy(np.array([1., 0., 0.], dtype=np.float32)).to(self.device).repeat((self.num_envs, 1))
-        self._actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-        self._previous_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-        self._last_torques = torch.zeros_like(self._robot.data.applied_torque)
+        self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_dof_vel = torch.zeros_like(self._robot.data.joint_vel)
+        self.torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_torques = torch.zeros_like(self.torques)
+        self.last_root_vel = torch.zeros_like(self._robot.data.root_state_w[:, 7:13])
 
         self.reach_goal_timer = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
         self.inc_goal = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device, requires_grad=False)
@@ -778,6 +782,9 @@ class LeggedRobot(DirectRLEnv):
         self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,)
         self.feet_air_time = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.float, device=self.device, requires_grad=False)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
+        self.base_lin_vel = quat_rotate_inverse(self.base_quat, self._robot.data.root_state_w[:, 7:10])
+        self.base_ang_vel = quat_rotate_inverse(self.base_quat, self._robot.data.root_state_w[:, 10:13])
+        self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
         if self.cfg.terrain.measure_heights:
             self.height_points = self._init_height_points()
         self.measured_heights = 0
@@ -847,7 +854,6 @@ class LeggedRobot(DirectRLEnv):
         terrain_importer = TrimeshTerrainImporter(
             vertices=self.terrain.vertices,
             triangles=self.terrain.triangles,
-            translation=(-self.terrain.cfg.border_size, -self.terrain.cfg.border_size, 0.0),
             initial_env_origins=self.initial_env_origins, 
             physics_material_cfg=physics_material_cfg, 
             visual_material_cfg=visual_material_cfg,
@@ -899,7 +905,6 @@ class LeggedRobot(DirectRLEnv):
         # add Go1 to scene
         self._robot = Articulation(self.cfg.robot)
         self.attach_camera_to_robot()
-        self.scene.articulations["robot"] = self._robot
 
         # base_init_state_list = self.cfg.init_state.pos + self.cfg.init_state.rot + self.cfg.init_state.lin_vel + self.cfg.init_state.ang_vel
         # self.base_init_state = to_torch(base_init_state_list, device=self.device, requires_grad=False)
@@ -1157,85 +1162,3 @@ class LeggedRobot(DirectRLEnv):
         heights = torch.min(heights, heights3)
 
         return heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
-
-
-    ################## parkour rewards ##################
-
-    def _reward_tracking_goal_vel(self):
-        target_vel = self.target_pos_rel / (torch.norm(self.target_pos_rel, dim=-1, keepdim=True) + 1e-5)
-        cur_vel = self._robot.data.root_lin_vel_b[:, :2]
-        proj_vel = torch.sum(target_vel * cur_vel, dim=-1)
-        command_vel = self.commands[:, 0]
-
-        # This rewards velocity up to the command velocity, then plateaus
-        # We use this for positive velocity since some obstacles may require more
-        # than the commanded speed to pass
-        rew_move = torch.minimum(proj_vel, command_vel) / (command_vel + 1e-5)
-        # This rewards is maximum at the command velocity and forms a Gaussian around it
-        # We use this for zero velocity to teach the robot to stop
-        rew_still = torch.exp(-torch.square(proj_vel - command_vel) / 0.2)
-
-        rew = torch.zeros_like(proj_vel)
-        rew[self.commands[:, 0] > 0] = rew_move[self.commands[:, 0] > 0]
-        rew[self.commands[:, 0] == 0] = rew_still[self.commands[:, 0] == 0]
-
-        return rew
-
-    def _reward_tracking_yaw(self):
-        rew = torch.exp(-torch.abs(self.target_yaw - self.yaw))
-        return rew
-    
-    def _reward_lin_vel_z(self):
-        rew = torch.square(self._robot.data.root_lin_vel_b[:, 2])
-        rew[self.env_class != -1] *= 0.5  # Only for flat terrain
-        return rew
-    
-    def _reward_ang_vel_xy(self):
-        return torch.sum(torch.square(self._robot.data.root_ang_vel_b[:, :2]), dim=1)
-     
-    def _reward_orientation(self):
-        rew = torch.sum(torch.square(self._robot.data.projected_gravity_b[:, :2]), dim=1)
-        rew[self.env_class != -1] = 0.0  # Only for flat terrain
-        return rew
-
-    def _reward_dof_acc(self):
-        return torch.sum(torch.square(self._robot.data.joint_acc), dim=1)
-
-    def _reward_collision(self):
-        penalised_contacts = torch.cat([self.contact_forces_CALF, self.contact_forces_THIGH], dim=1)
-        assert list(penalised_contacts.size()) == [self.num_envs, 8, 3], str(penalised_contacts.size())
-        # return torch.sum(1.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
-        return torch.sum(0.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
-
-    def _reward_action_rate(self):
-        return torch.norm(self._actions - self._previous_actions, dim=1)
-
-    def _reward_delta_torques(self):
-        return torch.sum(torch.square(self._robot.data.applied_torque - self._last_torques), dim=1)
-    
-    def _reward_torques(self):
-        return torch.sum(torch.square(self._robot.data.applied_torque), dim=1)
-
-    def _reward_hip_pos(self):
-        return torch.sum(torch.square(self._robot.data.joint_pos[:, self.hip_indices] - self._robot.data.default_joint_pos[:, self.hip_indices]), dim=1)
-
-    def _reward_dof_error(self):
-        dof_error = torch.sum(torch.square(self._robot.data.joint_pos - self._robot.data.default_joint_pos), dim=1)
-        return dof_error
-    
-    def _reward_feet_stumble(self):
-        # Penalize feet hitting vertical surfaces
-        rew = torch.any(torch.norm(self.contact_forces_FOOT[:, :, :2], dim=2) >\
-             4 *torch.abs(self.contact_forces_FOOT[:, :, 2]), dim=1)
-        return rew.float()
-
-    def _reward_feet_edge(self):
-        feet_pos = self._robot.data.body_state_w[:, self.feet_indices, :3]
-        feet_pos_xy = ((feet_pos[:, :, :2] + self.terrain.cfg.border_size) / self.cfg.terrain.horizontal_scale).round().long()  # (num_envs, 4, 2)
-        feet_pos_xy[..., 0] = torch.clip(feet_pos_xy[..., 0], 0, self.x_edge_mask.shape[0]-1)
-        feet_pos_xy[..., 1] = torch.clip(feet_pos_xy[..., 1], 0, self.x_edge_mask.shape[1]-1)
-        feet_at_edge = self.x_edge_mask[feet_pos_xy[..., 0], feet_pos_xy[..., 1]]
-    
-        self.feet_at_edge = self.contact_filt & feet_at_edge
-        rew = (self.terrain_levels > 3) * torch.sum(self.feet_at_edge, dim=-1)
-        return rew
