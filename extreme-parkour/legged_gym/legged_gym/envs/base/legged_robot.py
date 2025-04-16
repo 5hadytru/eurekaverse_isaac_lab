@@ -328,7 +328,6 @@ class LeggedRobot(DirectRLEnv):
         """
         # prepare quantities
         self.base_quat[:] = self._robot.data.root_state_w[:, 3:7].clone()
-        self.base_lin_acc = (self._robot.data.root_state_w[:, 7:10] - self.last_root_vel[:, :3]) / self.dt
 
         self.roll, self.pitch, self.yaw = euler_from_quaternion(self.base_quat)
 
@@ -361,7 +360,6 @@ class LeggedRobot(DirectRLEnv):
 
         self.last_dof_vel[:] = self._robot.data.joint_vel[:].clone()
         self._last_torques[:] = self._robot.data.applied_torque[:].clone()
-        self.last_root_vel[:] = self._robot.data.root_state_w[:, 7:13].clone()
 
         if self.debug_viz:
             # self.gym.clear_lines(self.viewer)
@@ -386,6 +384,8 @@ class LeggedRobot(DirectRLEnv):
         pitch_cutoff = torch.abs(self.pitch) > 1.5
         height_cutoff = self._robot.data.root_state_w[:, 2] < -0.25
         reach_goal_cutoff = self.cur_goal_idx >= self.cfg.terrain.num_goals
+
+        print(f"Roll cutoff: {roll_cutoff.sum()}, pitch: {pitch_cutoff}, height: {height_cutoff}, reached goal: {reach_goal_cutoff}")
 
         self.reset_term = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
         self.reset_term |= roll_cutoff
@@ -435,7 +435,6 @@ class LeggedRobot(DirectRLEnv):
         self._previous_actions[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
         self._last_torques[env_ids] = 0.
-        self.last_root_vel[:] = 0.
         self.feet_air_time[env_ids] = 0.
         self.reset_buf[env_ids] = 1
         self.reset_term[env_ids] = 1
@@ -764,7 +763,6 @@ class LeggedRobot(DirectRLEnv):
         self._previous_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self._last_torques = torch.zeros_like(self._robot.data.applied_torque)
         self.last_dof_vel = torch.zeros_like(self._robot.data.joint_vel)
-        self.last_root_vel = torch.zeros_like(self._robot.data.root_state_w[:, 7:13])
 
         self.reach_goal_timer = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
         self.inc_goal = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device, requires_grad=False)
