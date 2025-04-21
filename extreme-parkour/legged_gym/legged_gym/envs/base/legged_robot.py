@@ -387,9 +387,6 @@ class LeggedRobot(DirectRLEnv):
         height_cutoff = self._robot.data.root_state_w[:, 2] < -0.25
         reach_goal_cutoff = self.cur_goal_idx >= self.cfg.terrain.num_goals
 
-        if height_cutoff.sum() > 0:
-            print(f"Height: {height_cutoff.sum()}")
-
         self.reset_term = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
         self.reset_term |= roll_cutoff
         self.reset_term |= pitch_cutoff
@@ -400,6 +397,8 @@ class LeggedRobot(DirectRLEnv):
         self.reset_buf = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
         self.reset_buf |= self.reset_time_out
         self.reset_buf |= self.reset_term
+
+        print(f"Time outs: {self.reset_time_out.sum()} Rolls: {roll_cutoff.sum()} Pitch: {pitch_cutoff.sum()} Height: {height_cutoff.sum()} Goal: {reach_goal_cutoff.sum()}")
 
     def _reset_idx(self, env_ids):
         """ Reset some environments.
@@ -1206,8 +1205,8 @@ class LeggedRobot(DirectRLEnv):
     def _reward_collision(self):
         penalised_contacts = torch.cat([self.contact_forces_CALF, self.contact_forces_THIGH], dim=1)
         assert list(penalised_contacts.size()) == [self.num_envs, 8, 3], str(penalised_contacts.size())
-        # return torch.sum(1.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
-        return torch.sum(0.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
+        return torch.sum(1.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
+        # return torch.sum(0.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
 
     def _reward_action_rate(self):
         return torch.norm(self._actions - self._previous_actions, dim=1)
