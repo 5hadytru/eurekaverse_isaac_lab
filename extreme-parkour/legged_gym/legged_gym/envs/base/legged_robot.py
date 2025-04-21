@@ -398,7 +398,7 @@ class LeggedRobot(DirectRLEnv):
         self.reset_buf |= self.reset_time_out
         self.reset_buf |= self.reset_term
 
-        print(f"Time outs: {self.reset_time_out.sum()} Rolls: {roll_cutoff.sum()} Pitch: {pitch_cutoff.sum()} Height: {height_cutoff.sum()} Goal: {reach_goal_cutoff.sum()}")
+        # print(f"Time outs: {self.reset_time_out.sum()} Rolls: {roll_cutoff.sum()} Pitch: {pitch_cutoff.sum()} Height: {height_cutoff.sum()} Goal: {reach_goal_cutoff.sum()}")
 
     def _reset_idx(self, env_ids):
         """ Reset some environments.
