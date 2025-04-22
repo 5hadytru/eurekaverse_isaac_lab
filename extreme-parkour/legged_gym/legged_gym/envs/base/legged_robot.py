@@ -92,9 +92,9 @@ class LeggedRobot(DirectRLEnv):
         self.dof_names = self._robot.joint_names
         self.num_dof = len(self.dof_names)
         self.feet_indices = [idx for idx, n in enumerate(self._robot.body_names) if "foot" in n.lower()]
-        assert len(self.feet_indices) == 4, f"Could not find 4 feet (searched {body_names})! Is 'hip' correct?"
-        self.hip_indices = [idx for idx, n in enumerate(self._robot.body_names) if "hip" in n.lower()]
-        assert len(self.hip_indices) == 4, f"Could not find 4 hips (searched {body_names})! Is 'hip' correct?"
+        assert len(self.feet_indices) == 4, f"Could not find 4 feet (searched {self._robot.body_names})! Is 'hip' correct?"
+        self.hip_indices = [idx for idx, n in enumerate(self._robot.joint_names) if "hip" in n.lower()]
+        assert len(self.hip_indices) == 4, f"Could not find 4 hips (searched {self._robot.joint_names})! Is 'hip' correct?"
         
         self.cfg = cfg
         self.debug_viz = False
@@ -1209,7 +1209,7 @@ class LeggedRobot(DirectRLEnv):
         # return torch.sum(0.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
 
     def _reward_action_rate(self):
-        return torch.norm(self._actions - self._previous_actions, dim=1)
+        return torch.norm(self._previous_actions - self._actions, dim=1)
 
     def _reward_delta_torques(self):
         return torch.sum(torch.square(self._robot.data.applied_torque - self._last_torques), dim=1)

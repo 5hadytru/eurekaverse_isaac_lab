@@ -379,7 +379,7 @@ class RewardScales:
     lin_vel_z = -1.0
     ang_vel_xy = -0.05
     orientation = -1.
-    dof_acc = -2.5e-7
+    dof_acc = -8.25e-8
     collision = -10.
     action_rate = -0.1
     delta_torques = -1.0e-7
