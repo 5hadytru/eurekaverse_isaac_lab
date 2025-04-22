@@ -1205,8 +1205,8 @@ class LeggedRobot(DirectRLEnv):
     def _reward_collision(self):
         penalised_contacts = torch.cat([self.contact_forces_CALF, self.contact_forces_THIGH], dim=1)
         assert list(penalised_contacts.size()) == [self.num_envs, 8, 3], str(penalised_contacts.size())
-        return torch.sum(1.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
-        # return torch.sum(0.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
+        # return torch.sum(1.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
+        return torch.sum(0.*(torch.norm(penalised_contacts, dim=-1) > 0.1), dim=1)
 
     def _reward_action_rate(self):
         return torch.norm(self._previous_actions - self._actions, dim=1)
