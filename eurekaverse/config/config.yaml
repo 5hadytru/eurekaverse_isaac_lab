@@ -9,7 +9,7 @@ iterations: 8                          # Number of environment generation iterat
 train_iterations: 1000                 # Number of training iterations per generated environment
 eval_steps: 1001                       # Number of evaluation steps per environment (1001 is fairly accurate, 10001 is most accurate)
 num_terrain_types: 10                  # Number of terrains to generate
-num_parallel_runs: 6                   # Number of parallel training runs per iteration
+num_parallel_runs: 1                   # Number of parallel training runs per iteration
 num_parallel_checks: 4                 # Number of parallel runs to query and check executability of GPT responses
 
 render_images: False                   # Render generated environments (doesn't work on some headless servers)
