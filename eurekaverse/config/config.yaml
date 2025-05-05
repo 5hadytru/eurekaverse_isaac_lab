@@ -18,7 +18,7 @@ deterministic_gpu: True                # Deterministically assign training and e
 
 wandb: True                            # Use wandb tracking
 
-gpt_model: "gpt-4.1-2025-04-14"        
+gpt_model: "gpt-4.1-mini-2025-04-14"        
 initial_query_sample_multiplier: 4     # Multiplier for the number of samples to query in first iteration
 evolution_query_sample_multiplier: 4   # Multiplier for the number of samples to query in later iterations
 max_gpt_queries: 10                    # Maximum number of attempted GPT queries for a single prompt

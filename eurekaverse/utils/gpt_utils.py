@@ -1,7 +1,11 @@
 
 import logging
 import os
-from openai import OpenAI
+import concurrent.futures
+import httpx
+from openai import OpenAI, RateLimitError
+import tenacity, logging, time, os, re
+from typing import List, Tuple
 
 import time
 import re
@@ -22,14 +26,18 @@ with open(Path(f"{file_dir}/../gpt/terrain_example_initial.py")) as f:
 with open(Path(f"{file_dir}/../gpt/terrain_example_evolution.py")) as f:
     evolution_terrain_example = f.read()
 
-client = OpenAI()
+# single global client with a sane read/connect timeout
+client = OpenAI(
+    http_client=httpx.Client(timeout=httpx.Timeout(60, connect=10))
+)
 replay_run = ""  # Set to a log directory (e.g., "outputs/.../gpt_queries") to replay a specific run's LLM responses
 replay_idx = 0   # Used to keep track of which response to load from a run (if replay_run is set)
 replay_idx_lock = threading.Lock()
 replay_initial_only = False  # Set to True to only replay initial queries and generate evolution queries from scratch
 
 gpt_pricing = {
-     "gpt-4.1-2025-04-14": (2e-6, 8e-6),
+     "gpt-4o-2024-11-20": (2.5e-6, 10e-6),
+     "gpt-4.1-mini-2025-04-14": (0.4e-6, 1.6e-6)
 }
 
 def prepare_prompts(cfg):
@@ -73,76 +81,107 @@ def query_gpt_evolution(cfg, prev_terrain_code, eval_statistics, terrain_stats, 
     ]
     return query_gpt(cfg, messages, num_samples)
 
-def query_gpt(cfg, messages, num_samples=1):
+# ────────────────────────────────────────────────────────────────────────────────
+@tenacity.retry(wait=tenacity.wait_random_exponential(min=1, max=20),
+                reraise=True,
+                retry=tenacity.retry_if_exception_type(RateLimitError))
+def _one_completion(msgs: List[dict], model: str, max_toks: int = 300) -> str:
+    """
+    Do a single streaming completion so the connection never goes idle.
+    """
+    stream = client.chat.completions.create(
+        model=model,
+        messages=msgs,
+        max_tokens=max_toks,
+        stream=True
+    )
+    pieces = []
+    for chunk in stream:
+        pieces.append(chunk.choices[0].delta.content or "")
+    return "".join(pieces)
+
+
+def _get_completions_parallel(msgs: List[dict], model: str, k: int) -> List[str]:
+    """
+    Launch k completions in parallel using a small ThreadPool.
+    """
+    max_workers = min(16, k)     # cap threads so we don't oversubscribe
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = [pool.submit(_one_completion, msgs, model) for _ in range(k)]
+        return [f.result() for f in futures]
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+def query_gpt(cfg, messages: List[dict], num_samples: int = 1
+              ) -> Tuple[List[dict], List[str], List[str], float, float]:
+    """
+    Query the OpenAI chat model with *num_samples* independent streaming calls.
+    Falls back to replay directory if `replay_run` is set.
+    Returns:
+        messages, raw_responses, parsed_code_responses, prompt_cost, response_cost
+    """
     logging.info(f"Querying OpenAI API for {num_samples} samples using {cfg.gpt_model}...")
 
+    # ── 1. Handle replay mode ───────────────────────────────────────────────────
     if replay_run:
         global replay_idx
-
-        log_dir_list = []
-        for root, dirs, _ in os.walk(replay_run):
-            for dir in dirs:
-                if "query" in dir:
-                    log_dir_list.append(os.path.join(root, dir))
-        log_dir_list = sorted(log_dir_list)
+        log_dir_list = sorted(
+            os.path.join(root, d)
+            for root, dirs, _ in os.walk(replay_run)
+            for d in dirs if "query" in d
+        )
 
         with replay_idx_lock:
             log_dir = log_dir_list[replay_idx]
-            responses = []
-            files = [i for i in os.listdir(log_dir) if "response" in i]
-            files = sorted(files, key=lambda x: int(x.rstrip(".txt").split("-")[-1]))  # Sort numerically
-            for file in files[:num_samples]:
-                with open(os.path.join(log_dir, file), "r") as f:
-                    responses.append(f.read())
-            prompt_cost, response_cost = 0, 0
+            files = sorted(
+                [f for f in os.listdir(log_dir) if "response" in f],
+                key=lambda x: int(x.rstrip(".txt").split("-")[-1])
+            )
+            raw_responses = [
+                open(os.path.join(log_dir, f), "r").read()
+                for f in files[:num_samples]
+            ]
+            prompt_cost = response_cost = 0.0
             logging.info(f"Loaded past response from {log_dir}")
             replay_idx = (replay_idx + 1) % len(log_dir_list)
+
+    # ── 2. Live call to OpenAI ──────────────────────────────────────────────────
     else:
-        responses = None
-        attempts = 10
-        for i in range(attempts):
-            try:
-                responses = client.chat.completions.create(
-                    model=cfg.gpt_model,
-                    messages=messages,
-                    n=num_samples,
-                    timeout=1800.0
-                )
-                break
-            except Exception as e:
-                logging.warning(f"Error querying OpenAI API (attempt {i})...")
-                logging.warning(e)
-                time.sleep(1)
-        if not responses:
-            logging.error(f"Failed to query OpenAI API {attempts} times!")
-            return None
+        t0 = time.time()
+        raw_responses = _get_completions_parallel(messages, cfg.gpt_model, num_samples)
+        elapsed = time.time() - t0
+        logging.info(f"Received {num_samples} completions in {elapsed:0.1f}s")
 
-        prompt_tokens, response_tokens = responses.usage.prompt_tokens, responses.usage.completion_tokens
-        prompt_pricing, response_pricing = gpt_pricing[cfg.gpt_model]
-        prompt_cost, response_cost = prompt_pricing * prompt_tokens, response_pricing * response_tokens  # GPT-4 Turbo pricing, $0.01/1K input, $0.03/1K output
-        logging.info(f"Received response, used {prompt_tokens} prompt tokens (${prompt_cost:.2f}) and {response_tokens} response tokens (${response_cost:.2f})")
-        responses = [choice.message.content for choice in responses.choices]
+        # usage metrics are not returned in streaming mode → estimate token counts
+        prompt_tokens = sum(len(m["content"].split()) for m in messages)
+        response_tokens = sum(len(r.split()) for r in raw_responses)
+        prompt_price, resp_price = gpt_pricing[cfg.gpt_model]
+        prompt_cost = prompt_price * prompt_tokens
+        response_cost = resp_price * response_tokens
+        logging.info(f"Approx. cost: ${prompt_cost + response_cost:0.4f}")
 
+    # ── 3. Extract code from each response ──────────────────────────────────────
     parsed_responses = []
-    for response in responses:
-        patterns = [
-            r'```python(.*?)```',
-            r'```(.*?)```',
-            r'^(.*?)$',
-        ]
-        for pattern in patterns:
-            string = re.search(pattern, response, re.DOTALL)
-            if string:
-                parsed_response = string.group(1).strip()
-                # Delete code outside of the function (check for un-indented lines)
-                parsed_response = parsed_response.split("\n")
-                parsed_response = [line for line in parsed_response
-                                   if line == "" or line.startswith(" ") or line.startswith("def") or line.startswith("import")]
-                parsed_response = "\n".join(parsed_response)
-                parsed_responses.append(parsed_response)
+    code_patterns = [
+        r'```python(.*?)```',
+        r'```(.*?)```',
+        r'^(.*?)$',
+    ]
+    for resp in raw_responses:
+        snippet = ""
+        for pat in code_patterns:
+            m = re.search(pat, resp, re.DOTALL)
+            if m:
+                snippet = m.group(1).strip()
                 break
-    
-    return messages, responses, parsed_responses, prompt_cost, response_cost
+        # keep only indented code or import/def lines
+        lines = [
+            ln for ln in snippet.split("\n")
+            if ln.strip() == "" or ln.startswith((" ", "def", "import"))
+        ]
+        parsed_responses.append("\n".join(lines))
+
+    return messages, raw_responses, parsed_responses, prompt_cost, response_cost
 
 def log_gpt_query(messages, responses, save_dir):
     if not os.path.exists(save_dir):
