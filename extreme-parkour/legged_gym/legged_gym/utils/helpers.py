@@ -106,6 +106,22 @@ def update_cfg_from_args(env_cfg, cfg_train, args):
         else: # parkour
             env_cfg.commands.ranges.lin_vel_x = [0.3, 1.2]
 
+        # terrain-related args
+        if args.terrain_length is not None:
+            env_cfg.terrain.terrain_length = args.terrain_length
+        if args.terrain_width is not None:
+            env_cfg.terrain.terrain_width = args.terrain_width
+        if args.vertical_scale is not None:
+            env_cfg.terrain.vertical_scale = args.vertical_scale
+        if args.horizontal_scale is not None:
+            env_cfg.terrain.horizontal_scale = args.horizontal_scale
+        if args.num_cols is not None:
+            env_cfg.terrain.num_cols = args.num_cols
+        if args.num_rows is not None:
+            env_cfg.terrain.num_rows = args.num_rows
+        if args.num_goals is not None:
+            env_cfg.terrain.num_goals = args.num_goals
+
     if cfg_train is not None and args.script == "train":
         if args.seed is not None:
             cfg_train.seed = args.seed

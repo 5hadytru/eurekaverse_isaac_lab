@@ -14,7 +14,7 @@ from eurekaverse.utils.misc_utils import suppress_output
 with suppress_output():
     from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg
     from legged_gym.utils import set_seed
-    from legged_gym.utils.terrain_gpt import fix_terrain, calc_direct_path_heights
+    from legged_gym.utils.terrain_utils import fix_terrain, calc_direct_path_heights
 
 file_dir = os.path.dirname(os.path.abspath(__file__))  # Location of this file
 with open(Path(f"{file_dir}/../gpt/terrain_template.py")) as f:
@@ -68,11 +68,13 @@ def add_terrain(terrain_filename, terrain_code, terrain_num):
     return True
 
 def setup_generated_terrains(terrain_filename, terrain_codes, use_chunking=False):
-    if use_chunking:
-        chunk_size = LeggedRobotCfg.terrain.num_cols
-        terrain_codes = [terrain_codes[i:i+chunk_size] for i in range(0, len(terrain_codes), chunk_size)]
-    else:
-        terrain_codes = [terrain_codes]
+    # if use_chunking:
+    #     chunk_size = LeggedRobotCfg.terrain.num_cols
+    #     terrain_codes = [terrain_codes[i:i+chunk_size] for i in range(0, len(terrain_codes), chunk_size)]
+    # else:
+    #     terrain_codes = [terrain_codes]
+
+    terrain_codes = [terrain_codes]
     for i, terrain_chunk in enumerate(terrain_codes):
         cur_terrain_filename = f"{terrain_filename}_{i}" if use_chunking else terrain_filename
         reset_terrain(cur_terrain_filename)
@@ -136,9 +138,7 @@ def load_terrain_function_from_file(filepath):
     function = module.set_terrain
     return function
 
-def compute_terrain_stats(terrain_fn_string):
-    cfg = LeggedRobotCfg.terrain
-
+def compute_terrain_stats(terrain_fn_string, cfg):
     set_terrain = load_terrain_function_from_string(terrain_fn_string)
 
     env_length = cfg.terrain_length
@@ -197,8 +197,8 @@ def compute_terrain_stats(terrain_fn_string):
     
     return stats
 
-def get_terrain_stats_string(terrain_fn_string, queue=None):
-    stats = compute_terrain_stats(terrain_fn_string)
+def get_terrain_stats_string(terrain_fn_string, terrain_cfg, queue=None):
+    stats = compute_terrain_stats(terrain_fn_string, terrain_cfg)
     stats_string = ""
     for set_idx, stat_dict in stats.items():
         if set_idx is not None:

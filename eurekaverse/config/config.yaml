@@ -28,3 +28,13 @@ resume_run: ""                         # Resume from a previous hydra run
 hydra:
   job:
     chdir: True
+
+# terrain stuff (overwrites LeggedRobotCfg)
+terrrain:
+  terrain_length: 18
+  terrain_width: 4
+  vertical_scale: 0.005
+  horizontal_scale: 0.1
+  num_cols: 40
+  num_rows: 10
+  num_goals: 8
