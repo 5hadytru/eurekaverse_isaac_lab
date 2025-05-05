@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Multi-skill course featuring small ramps, jumps, and a final narrow bridge."""
+    """A series of alternating low and high balance beams with forced turns (slalom), testing turning while balancing."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,64 +11,12 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    mid_y = m_to_idx(width / 2)
+    # Setup: Balance beams with alternating offsets and heights
+    # Beams: 0.5 to 0.7m wide, 1.3-1.7m long (varied slightly as function of difficulty, still always >= 1m wide)
+    # Beams have negative space (pit) on either side, so robot must stay on beam, not fall off.
+    # Each beam is offset left or right to force turning.
+    # Use at least 1.2m space between beams for turning zone.
+    # Beams start at x=2; spawn area at x<2 is left flat.
 
-    def add_ramp(start_x, end_x, mid_y, start_height, end_height):
-        """Add a ramp to the height field."""
-        for x in range(start_x, end_x):
-            height_value = start_height + ((end_height - start_height) * (x - start_x) / (end_x - start_x))
-            height_field[x, mid_y- m_to_idx(0.5): mid_y + m_to_idx(0.5)] = height_value
-
-    def add_jump(start_x, mid_y, height, length, width):
-        """Add a platform to jump onto."""
-        x1, x2 = start_x, start_x + length
-        y1, y2 = mid_y - width//2, mid_y + width//2
-        height_field[x1:x2, y1:y2] = height
-
-    def add_narrow_bridge(start_x, end_x, mid_y, width):
-        """Add a narrow bridge towards the end of the course."""
-        x1, x2 = start_x, end_x
-        y1, y2 = mid_y - width//2, mid_y + width//2
-        height_field[x1:x2, y1:y2] = 0.5
-
-    # Set up levels and parameters
-    ramp_height = 0.2 + 0.3 * difficulty
-    platform_height = 0.4 + 0.3 * difficulty
-    gap_length = m_to_idx(0.4)
-    narrow_bridge_width = m_to_idx(0.4)
-
-    # Clear spawn area
-    spawn_length = m_to_idx(2)
-    height_field[0:spawn_length, :] = 0
-    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]
-
-    cur_x = spawn_length
-
-    # Add series of ramps and platforms
-    for i in range(3):
-        ramp_length = m_to_idx(1.0 + 0.5 * difficulty)
-        add_ramp(cur_x, cur_x + ramp_length, mid_y, 0, ramp_height)
-        goals[i+1] = [cur_x + ramp_length//2, mid_y]
-        
-        cur_x += ramp_length + gap_length
-        
-        platform_length = m_to_idx(1.0)
-        add_jump(cur_x, mid_y, platform_height, platform_length, m_to_idx(1.0))
-        goals[i+2] = [cur_x + platform_length//2, mid_y]
-        
-        cur_x += platform_length + gap_length
-
-    # Add a final narrow bridge
-    bridge_length = m_to_idx(2.0)
-    add_narrow_bridge(cur_x, cur_x + bridge_length, mid_y, narrow_bridge_width)
-    goals[6] = [cur_x + bridge_length//2, mid_y]
-
-    cur_x += bridge_length
-    
-    # Set final goal
-    goals[7] = [cur_x + m_to_idx(0.5), mid_y]
-
-    #Ensure remaining area is flat
-    height_field[cur_x:, :] = 0
-
-    return height_field, goals
+    beam_width = 0.5 + 0.2 * difficulty  # 0.5~0.7m wide
+    beam_length = 1.

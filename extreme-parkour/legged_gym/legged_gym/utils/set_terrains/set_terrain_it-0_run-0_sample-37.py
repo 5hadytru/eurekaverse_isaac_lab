@@ -2,64 +2,27 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Terrain with narrow pathways and pits to test robot's balancing and jumping skills."""
+    """Stepping-stone pillars: the quadruped must traverse a series of round raised stepping stones over a pit, testing agile foot placement and balance."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
 
-    length_idx = m_to_idx(length)
-    width_idx = m_to_idx(width)
-    height_field = np.zeros((length_idx, width_idx))
+    height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Constants defining pathway and pit design based on difficulty
-    min_path_width = 0.4  # Minimum width narrow pathway
-    max_path_width = 1.0  # Maximum width narrow pathway
-    pit_length_min = 0.2   # Minimum length of pits
-    pit_length_max = 1.0   # Maximum length of pits (varies based on difficulty)
+    # Course Center
+    mid_y = m_to_idx(width // 2)
 
-    # Create pathways and pits
-    cur_x = m_to_idx(2)
-    step_count = 0
+    # Set up spawn flat area
+    spawn_length = m_to_idx(2)
+    height_field[0:spawn_length, :] = 0
+    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]
 
-    # Set up path and goals
-    height_field[:cur_x, :] = 0  # Initial flat area
-    mid_y = width_idx // 2
+    # The pit (everything after the spawn is -1.0m)
+    height_field[spawn_length:, :] = -1.0
 
-    for goal_idx in range(8):
-        path_width = min_path_width + (max_path_width - min_path_width) * (1 - difficulty)
-        path_width = m_to_idx(path_width)
-        half_path_width = path_width // 2
-
-        # Calculate indices for current path
-        start_x = cur_x
-        end_x = start_x + m_to_idx(1.0)
-        
-        height_min = 0.0
-        height_max = 0.2 + 0.3 * difficulty
-        path_height = np.random.uniform(height_min, height_max)
-        height_field[start_x:end_x, mid_y - half_path_width:mid_y + half_path_width] = path_height
-
-        # Save the goal at the center of each pathway
-        goals[goal_idx] = [start_x + m_to_idx(0.5), mid_y]
-
-        # Calculate indices for the next pit (gap)
-        pit_length = pit_length_min + (pit_length_max - pit_length_min) * difficulty
-        pit_length = m_to_idx(pit_length)
-        
-        cur_x = end_x + pit_length
-        if cur_x >= length_idx - m_to_idx(1):  # Ensure we stay in bounds
-            break
-
-        step_count += 1
-
-    # Fill any remaining area after the last pathway as flat ground (goal area)
-    height_field[cur_x:, :] = 0
-
-    # Ensure that we have exactly 8 goals
-    if step_count < 7:
-        for i in range(step_count+1, 8):
-            goals[i] = [cur_x - m_to_idx(0.5), mid_y]
-
-    return height_field, goals
+    # Stepping stone parameters (all stones are set on top of the pit)
+    # Pillar (stone) diameter decreases and spacing increases with difficulty
+    min_diam, max_diam = 0.55, 0.75
+    stone_diam = max

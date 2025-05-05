@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Obstacle course with slalom ladders and varying height barriers for the robot to navigate through."""
+    """Slalom-style course with 7 low, wide 'rails' that form an alternating zig-zag, requiring the quadruped to turn tightly and balance as it walks atop each rail."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,39 +11,11 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    slalom_gap = 0.8 - 0.3 * difficulty  # Slalom gap decreases with difficulty
-    slalom_gap = m_to_idx(slalom_gap)
-    barrier_height = 0.05 + 0.25 * difficulty  # Barrier height increases with difficulty
-    barrier_width = 1.0 + 0.5 * difficulty  # Barrier width increases slightly with difficulty
-    barrier_width = m_to_idx(barrier_width)
-    slalom_y_positions = [m_to_idx(1.0) + m_to_idx(2.0) * i for i in range(4)]  # Positioning slalom barriers
+    # Set up the rail ("beam") dimensions
+    # Rail width varies slightly with difficulty (narrower/harder)
+    rail_width_m = 1.3 - 0.7 * difficulty  # 1.3m (easy), 0.6m (hard)
+    rail_length_m = 1.3 + 0.5 * difficulty  # 1.3m-1.8m
+    rail_height = 0.09 + 0.07 * difficulty  # just off the ground, up to 0.16m
 
-    def add_slalom_barrier(start_x, width, height, y_positions):
-        for y in y_positions:
-            height_field[start_x:start_x+width, y:y + m_to_idx(0.4)] = height
-
-    dx_min, dx_max = 2.0, 3.0
-    dx_min, dx_max = m_to_idx(dx_min), m_to_idx(dx_max)
-
-    # Initial flat ground for spawning
-    spawn_length = m_to_idx(2)
-    height_field[0:spawn_length, :] = 0
-    # Put first goal at spawn
-    mid_y = m_to_idx(width) // 2
-    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]
-
-    cur_x = spawn_length
-    for i in range(4):  # Set up 4 slalom sections
-        add_slalom_barrier(cur_x, barrier_width, barrier_height, slalom_y_positions)
-
-        # Place goals to navigate the slaloms
-        goals[i+1] = [cur_x + m_to_idx(0.5), mid_y - m_to_idx(1.5) * ((i+1) % 2)]
-        
-        # Add a clear pathway between the slalom sections
-        cur_x += barrier_width + slalom_gap
-
-    # Add final goal at the end of the course
-    goals[-1] = [cur_x + m_to_idx(1.5), mid_y]
-    height_field[cur_x:, :] = 0
-
-    return height_field, goals
+    gap_min = 0.15 + 0.15 * difficulty  # gap between rails, meters
+    gap_max = 0.

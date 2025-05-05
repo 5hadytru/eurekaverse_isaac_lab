@@ -7,7 +7,7 @@ import time
 import threading
 import contextlib
 import re
-
+from pathlib import Path
 import time
 import threading
 
@@ -76,38 +76,109 @@ def get_num_gpus() -> int:
     """Return the total number of NVIDIA GPUs visible to NVML."""
     return _device_count()
 
-def run_subprocess(command, log_file):
-    if log_file == None:
-        process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={**os.environ.copy(), "TQDM_DISABLE": "1"})
-    else:
-        with open(log_file, "a") as f:
-            f.write("\n" + "="*100 + "\n" + f"Running command: {command}\n" + "="*100 + "\n")
-            process = subprocess.Popen(command.split(), stdout=f, stderr=f, env={**os.environ.copy(), "TQDM_DISABLE": "1"})
-    return process
+# ────────────────────────────────────────────────────────────────
+# Launch a command and return Popen handle
+# ────────────────────────────────────────────────────────────────
+def run_subprocess(command: str, log_file: Path | str | None):
+    """
+    Execute *command* inside Bash so that shell built‑ins (`source`, `&&`, etc.)
+    work. All output goes to stdout (stderr is merged) and is captured in PIPE.
+    """
+    env = os.environ.copy()
+    env["TQDM_DISABLE"] = "1"
 
-def wait_subprocess(process, log_file, success_log, failure_log, timeout=60):
-    timeout = time.time() + timeout
-    while True:
-        if log_file is None:
-            output = process.stdout.readline()
-        else: 
-            with open(log_file, 'r') as file:
-                output = file.read()
-        if output:
-            if success_log in output:
-                return True, False
-            if failure_log in output:
-                time.sleep(1)  # Wait for the process to finish writing to the log file
+    proc = subprocess.Popen(
+        ["/bin/bash", "-c", command],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,   # merge streams
+        text=True,                  # str not bytes
+        bufsize=1,                  # line‑buffered
+        env=env,
+    )
+
+    # Prepend a header to the log file, if any
+    if log_file is not None:
+        log_path = Path(log_file)
+        log_path.parent.mkdir(exist_ok=True, parents=True)
+        with open(log_path, "a") as f:
+            f.write("\n" + "=" * 100 + "\n"
+                    f"Running command: {command}\n"
+                    + "=" * 100 + "\n")
+
+    return proc
+
+
+# ────────────────────────────────────────────────────────────────
+# Wait for success/failure strings, premature exit, or timeout
+# ────────────────────────────────────────────────────────────────
+def wait_subprocess(
+        process: subprocess.Popen,
+        log_file: Path | str | None,
+        success_log: str,
+        failure_log: str,
+        timeout: int = 60):
+    """
+    Returns (success_found, timed_out).
+
+    * Streams every line to the caller.
+    * Mirrors the same line into *log_file* when supplied.
+    * If the child dies early or times out, prints / appends any residual
+      output so you can see the traceback or Bash error.
+    """
+    deadline = time.time() + timeout
+    mirror = None
+    if log_file is not None:
+        mirror = open(log_file, "a")
+
+    try:
+        while True:
+            line = process.stdout.readline() if process.stdout else ""
+            if line:
+                if mirror:
+                    mirror.write(line)
+                    mirror.flush()
+                else:
+                    print(line, end="")
+
+                if success_log in line:
+                    return True, False
+                if failure_log in line:
+                    _drain_and_dump(process, mirror)
+                    return False, False
+
+            # Check exit status
+            if (retcode := process.poll()) is not None:
+                if retcode != 0:
+                    logging.warning(f"Process exited with code {retcode}")
+                _drain_and_dump(process, mirror)
                 return False, False
 
-        retcode = process.poll()
-        if retcode is not None:
-            logging.warning(f"Process terminated while waiting with code {retcode}")
-            return False, False
-        if time.time() > timeout:
-            return False, True
+            if time.time() > deadline:
+                logging.warning("wait_subprocess(): timeout")
+                _drain_and_dump(process, mirror)
+                return False, True
 
-        time.sleep(1)
+            time.sleep(0.2)
+    finally:
+        if mirror:
+            mirror.close()
+
+
+# ────────────────────────────────────────────────────────────────
+# Helper: grab what’s left in the pipe after exit / timeout
+# ────────────────────────────────────────────────────────────────
+def _drain_and_dump(proc: subprocess.Popen, mirror):
+    try:
+        remaining, _ = proc.communicate(timeout=1)
+    except subprocess.TimeoutExpired:
+        remaining = ""
+    if remaining:
+        if mirror:
+            mirror.write("\n── residual output ──\n")
+            mirror.write(remaining)
+        else:
+            print("\n── residual output ──")
+            print(remaining, end="")
 
 @contextlib.contextmanager
 def suppress_output():

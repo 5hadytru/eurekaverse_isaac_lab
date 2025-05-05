@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Series of steps and narrow beams for the robot to navigate, testing balance and precise movements."""
+    """Series of balance beams that force the robot to walk steady and precise over narrow elevated paths."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,51 +11,15 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Set dimensions for steps and beams
-    step_height_min = 0.05
-    step_height_max = 0.4 * difficulty + 0.1
-    step_length = m_to_idx(0.5)
-    step_width = m_to_idx(1.0)
+    # Definitions based on difficulty for beams: get narrower/higher with more difficulty
+    beam_width_min = 0.4                     # Absolute minimum width
+    beam_width_max = 1.1                     # Maximum width
+    beam_width = beam_width_max - (beam_width_max - beam_width_min) * difficulty
 
-    beam_height = 0.3 * difficulty + 0.05
-    beam_length = m_to_idx(1.5)
-    beam_width = m_to_idx(0.4)  # Narrow beam
+    beam_height_min = 0.07                   # Minimal rise above ground (meters)
+    beam_height_max = 0.22                   # At max difficulty, beams are high
+    beam_height = beam_height_min + (beam_height_max - beam_height_min) * difficulty
 
-    mid_y = m_to_idx(width) // 2
-
-    def add_step(start_x, end_x, mid_y, height):
-        y1, y2 = mid_y - step_width // 2, mid_y + step_width // 2
-        height_field[start_x:end_x, y1:y2] = height
-
-    def add_beam(start_x, end_x, mid_y, height):
-        y1, y2 = mid_y - beam_width // 2, mid_y + beam_width // 2
-        height_field[start_x:end_x, y1:y2] = height
-
-    # Set spawn area to flat ground
-    spawn_length = m_to_idx(2)
-    height_field[0:spawn_length, :] = 0
-    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]  # First goal at spawn area
-
-    # Variables to keep track of x position and current goal index
-    cur_x = spawn_length
-    goal_index = 1
-
-    for i in range(4):  # Create 4 steps
-        step_height = np.random.uniform(step_height_min, step_height_max)
-        add_step(cur_x, cur_x + step_length, mid_y, step_height)
-        goals[goal_index] = [cur_x + step_length // 2, mid_y]
-        cur_x += step_length
-        goal_index += 1
-
-    cur_x += m_to_idx(1.0)  # Small gap between steps and beams
-
-    for i in range(3):  # Create 3 narrow beams
-        add_beam(cur_x, cur_x + beam_length, mid_y, beam_height)
-        goals[goal_index] = [cur_x + beam_length // 2, mid_y]
-        cur_x += beam_length
-        goal_index += 1
-    
-    # Add final goal behind the last beam
-    goals[-1] = [cur_x + m_to_idx(0.5), mid_y]
-
-    return height_field, goals
+    pit_depth_min = -0.05                    # At easy, a pit that is barely below ground
+    pit_depth_max = -0.35                    # At hard, a deep pit around beams
+    pit_depth =

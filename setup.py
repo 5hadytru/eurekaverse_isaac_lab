@@ -17,7 +17,7 @@ setup(
         'pyfqmr',
         'hydra-core',
         'wandb',
-        'gpustat',
+        'tenacity',
         'tqdm',
         'ipdb',
     ],

@@ -37,7 +37,7 @@ replay_initial_only = False  # Set to True to only replay initial queries and ge
 
 gpt_pricing = {
      "gpt-4o-2024-11-20": (2.5e-6, 10e-6),
-     "gpt-4.1-mini-2025-04-14": (0.4e-6, 1.6e-6)
+     "gpt-4.1-2025-04-14": (2.0e-6, 8.0e-6)
 }
 
 def prepare_prompts(cfg):

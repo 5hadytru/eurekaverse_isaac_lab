@@ -16,6 +16,7 @@ import threading
 import ast
 import pickle
 import copy
+import pathlib
 
 # Hide wandb output
 os.environ["WANDB_SILENT"] = "True"
@@ -60,19 +61,46 @@ eval_testing_stats_per_terrain = {}              # (Unused)
 
 num_gpus = get_num_gpus()
 
+python_prefix = "/isaaclab/isaaclab.sh -p" # prefix for using python
+env_vars_sh = "/isaaclab/workspace/export_vars.sh" # path to script that exports env vars
+
+def load_env_from_shell_file(path: str | os.PathLike) -> None:
+    """
+    Read a file that contains lines like
+        VAR=value
+        export OTHER=value
+    and inject those pairs into os.environ in O(N) time.
+    """
+    assign_rx = re.compile(r'^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$')
+
+    with open(path, "r") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue                           # comment / blank → skip
+            m = assign_rx.match(line)
+            if not m:
+                # Non‑assignment lines (functions, if‑blocks, etc.) are ignored.
+                continue
+            key, val = m.groups()
+            if (val.startswith(("'", '"')) and val.endswith(("'", '"'))
+                    and len(val) >= 2):
+                val = val[1:-1]                   # drop surrounding quotes
+            os.environ[key] = val
+
+
 def run_training(cfg, it, parallel_run_id, load_exptid):
     log_file = output_dir / f"train_iter-{it}_run-{parallel_run_id}.log"
     if log_file.exists():
         log_file.rename(f"{log_file}.old")
     
     gpu = get_freest_gpu() if not cfg.deterministic_gpu else f"cuda:{parallel_run_id % num_gpus}"
-    command = f"python -u {train_script} --task {cfg.quadruped_model} --exptid {run_id}_{it}_{parallel_run_id} --device {gpu} --max_iterations {cfg.train_iterations} --terrain_type it-{it}_run-{parallel_run_id}"
+    command = f"{python_prefix} -u {train_script} --task {cfg.quadruped_model} --exptid {run_id}_{it}_{parallel_run_id} --device {gpu} --max_iterations {cfg.train_iterations} --terrain_type it-{it}_run-{parallel_run_id}"
     command = command + f" --resume --load_run {load_exptid}"
     command = command + f" --use_wandb --wandb_id {wandb_id}_{it}_{parallel_run_id} --wandb_group {run_id}" if cfg.wandb else command
     command = command + f" --render_images" if cfg.render_images else command
     for k, v in cfg.terrain.items():
         command = command + f" --{k} {v}"
-        print(f" --{k} {v}")
 
     process = run_subprocess(command=command, log_file=log_file)
     success, timeout = wait_subprocess(process, log_file, success_log="Starting training", failure_log="Traceback", timeout=20*60)
@@ -89,10 +117,9 @@ def run_evaluation(cfg, it, parallel_run_id, exptid, terrain):
         log_file.rename(f"{log_file}.old")
 
     gpu = get_freest_gpu() if not cfg.deterministic_gpu else f"cuda:{parallel_run_id % num_gpus}"
-    command = f"python -u {eval_script} --task {cfg.quadruped_model} --exptid {exptid} --device {gpu} --headless --max_steps {cfg.eval_steps} --metric_granularity type"
+    command = f"{python_prefix} -u {eval_script} --task {cfg.quadruped_model} --exptid {exptid} --device {gpu} --headless --max_steps {cfg.eval_steps} --metric_granularity type"
     for k, v in cfg.terrain.items():
         command = command + f" --{k} {v}"
-        print(f" --{k} {v}")
     if terrain == "pre_training" or terrain == "post_training":
         command = command + f" --terrain_type it-{it}_run-{parallel_run_id}"
     elif terrain == "testing":
@@ -232,10 +259,9 @@ def check_response(cfg, gpt_response, it, parallel_run_id, sample_id, terrain_id
         log_file.rename(f"{log_file}.old")
     
     gpu = get_freest_gpu(gpustat_delay=0) if not cfg.deterministic_gpu else (f"cuda:{sample_id % num_gpus}" if terrain_id == -1 else f"cuda:{terrain_id % num_gpus}")
-    command = f"python -u {train_script} --task {cfg.quadruped_model} --exptid {run_id}_{it}_{parallel_run_id} --device {gpu} --max_iterations 0 --terrain_type {terrain_type} --check_terrain_feasibility"
+    command = f"{python_prefix} -u {train_script} --task {cfg.quadruped_model} --exptid {run_id}_{it}_{parallel_run_id} --device {gpu} --max_iterations 0 --terrain_type {terrain_type} --check_terrain_feasibility"
     for k, v in cfg.terrain.items():
         command = command + f" --{k} {v}"
-        print(f" --{k} {v}")
     process = run_subprocess(command=command, log_file=log_file)
     success, timeout = wait_subprocess(process, log_file, success_log="Converting heightmap to trimesh", failure_log="Traceback", timeout=10*60)
     if timeout:
@@ -438,6 +464,8 @@ def main(cfg):
     global run_id, wandb_id, output_dir, gpt_queries_dir, check_execution_dir, renders_dir
 
     assert sum(cfg.best_run_proportions) == 1, "Best run proportions must sum to 1!"
+
+    load_env_from_shell_file(env_vars_sh)
 
     working_dir = Path(hydra.utils.get_original_cwd())
     output_dir = Path(os.getcwd())

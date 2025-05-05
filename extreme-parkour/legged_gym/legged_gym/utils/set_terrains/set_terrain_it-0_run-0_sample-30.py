@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A combination of elevated and recessed stepping stones for the robot to traverse."""
+    """Slalom course of offset, wide cylindrical 'logs' to test stepping over obstacles and tight turning."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,52 +11,13 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Obstacle specifications
-    step_length = 0.75
-    step_length = m_to_idx(step_length)
-    step_width = 0.8
-    step_width = m_to_idx(step_width)
-    step_height_min = 0.05 + 0.1 * difficulty
-    step_height_max = 0.15 + 0.3 * difficulty
-    step_gap = 0.2 + 0.5 * difficulty
-    step_gap = m_to_idx(step_gap)
-
-    mid_y = m_to_idx(width) // 2
-
-    def add_step(x, y, height):
-        """Add a step at location (x, y) with given height"""
-        half_width = step_width // 2
-        x1, x2 = x, x + step_length
-        y1, y2 = y - half_width, y + half_width
-        height_field[x1:x2, y1:y2] = height
-
-    # Set spawn area to flat ground
-    spawn_length = m_to_idx(2)
-    height_field[0:spawn_length, :] = 0
-    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]
-
-    # Initial step down (negative height) to force descent initially
-    initial_step = -0.15 - 0.2 * difficulty
-    height_field[spawn_length:m_to_idx(3), :] = initial_step
-    goals[1] = [m_to_idx(2.5), mid_y]
-
-    cur_x = m_to_idx(3)
-    for i in range(5):  # Create 5 steps
-        step_height = np.random.uniform(step_height_min, step_height_max)
-        add_step(cur_x, mid_y, step_height)
-
-        # Place a goal at each step
-        goals[i + 2] = [cur_x + step_length / 2, mid_y]
-
-        # Add gap between steps
-        cur_x += step_length + step_gap
-
-    # Last step up and then back to ground level
-    final_step_height = np.random.uniform(step_height_min, step_height_max)
-    add_step(cur_x, mid_y, final_step_height)
-    goals[7] = [cur_x + step_length + m_to_idx(0.5), mid_y]
-
-    # Ground level after last step
-    height_field[cur_x + step_length:, :] = 0
-
-    return height_field, goals
+    # Course Parameters
+    log_radius = 0.18 + 0.18 * difficulty  # 0.18–0.36 m, always much wider than the robot's body
+    log_height = 0.1 + 0.18 * difficulty   # 0.1–0.28 m
+    log_length = 1.9 + 0.7 * difficulty    # 1.9–2.6 m long; always longer than robot and 1m requirement
+    log_radius_idx = m_to_idx(log_radius)
+    log_length_idx = m_to_idx(log_length)
+    log_height_scalar = log_height
+    
+    # Offset parameters
+    lateral_span = width - 1.2         # How far logs can be offset laterally (so logs never touch edge

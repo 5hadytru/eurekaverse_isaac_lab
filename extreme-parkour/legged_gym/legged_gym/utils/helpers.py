@@ -92,10 +92,6 @@ def update_cfg_from_args(env_cfg, cfg_train, args):
             env_cfg.num_envs = args.num_envs
         if args.seed is not None:
             env_cfg.seed = args.seed
-        if args.terrain_rows is not None:
-            env_cfg.terrain.num_rows = args.terrain_rows
-        if args.terrain_cols is not None:
-            env_cfg.terrain.num_cols = args.terrain_cols
         if args.terrain_type is not None:
             env_cfg.terrain.type = args.terrain_type
         if args.check_terrain_feasibility:
@@ -156,9 +152,14 @@ def add_agent_args(parser):
     parser.add_argument("--use_camera", action="store_true", default=False, help="Render camera for distillation")
 
 def add_terrain_args(parser):
-    parser.add_argument("--terrain_rows", type=int, help="Number of rows (levels) in the terrain grid")
-    parser.add_argument("--terrain_cols", type=int, help="Number of columns (types) in the terrain grid")
     parser.add_argument("--terrain_type", type=str, default="default", help="Which set_terrain() function file to use")
+    parser.add_argument("--terrain_length", type=int, help="")
+    parser.add_argument("--terrain_width", type=int, help="")
+    parser.add_argument("--vertical_scale", type=float, help="")
+    parser.add_argument("--horizontal_scale", type=float, help="")
+    parser.add_argument("--num_cols", type=int, help="")
+    parser.add_argument("--num_rows", type=int, help="")
+    parser.add_argument("--num_goals", type=int, help="")
     parser.add_argument("--check_terrain_feasibility", action="store_true", default=False, help="Check terrain feasibility with simple heuristics")
 
 def add_shared_args(parser):
