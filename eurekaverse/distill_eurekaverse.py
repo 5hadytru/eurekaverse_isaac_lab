@@ -25,7 +25,7 @@ os.environ["WANDB_SILENT"] = "True"
 httpx_logger = logging.getLogger("httpx")
 httpx_logger.setLevel(logging.WARNING)
 
-from eurekaverse.utils.terrain_utils import set_terrain, copy_terrain, setup_generated_terrains_from_file, get_eval_stats_from_file, stat_to_str, get_terrain_descriptions, extract_fixed_terrains, get_num_total_goals
+from eurekaverse.utils.terrain_utils import set_terrain, copy_terrain, setup_generated_terrains_from_file, get_eval_stats_from_file, stat_to_str, get_terrain_descriptions, extract_fixed_terrains
 from eurekaverse.utils.gpt_utils import prepare_prompts, query_gpt_initial, query_gpt_evolution, log_gpt_query
 from eurekaverse.utils.misc_utils import get_freest_gpu, run_subprocess, wait_subprocess
 

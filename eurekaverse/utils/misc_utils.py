@@ -8,28 +8,73 @@ import threading
 import contextlib
 import re
 
-gpustat_lock = threading.Lock()
-gpustat_next_ready_time = time.time()
+import time
+import threading
 
-def get_freest_gpu(gpustat_delay=10):
-    # We use the lock to ensure that gpustat is used by only one thread at a time
-    global gpustat_lock, gpustat_next_ready_time
-    with gpustat_lock:
-        if time.time() < gpustat_next_ready_time:
-            time.sleep(gpustat_next_ready_time - time.time())
-        sp = subprocess.Popen(['gpustat', '--json'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out_str, _ = sp.communicate()
-        gpustat_next_ready_time = time.time() + gpustat_delay  # Give gpustat some time to refresh
+try:
+    import pynvml  # pip install nvidia-ml-py3
+except ImportError as exc:           # fail hard and early
+    raise RuntimeError(
+        "pynvml (package nvidia‑ml‑py3) is required for GPU queries: "
+        "pip install nvidia-ml-py3"
+    ) from exc
 
-    gpustats = json.loads(out_str.decode('utf-8'))
-    freest_gpu = min(gpustats['gpus'], key=lambda x: x['memory.used'])
-    return f"cuda:{freest_gpu['index']}"
+# ---------- one‑time NVML initialisation ----------
+pynvml.nvmlInit()
+_NVML_INITIALISED = True
 
-def get_num_gpus():
-    sp = subprocess.Popen(['gpustat', '--json'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out_str, _ = sp.communicate()
-    gpustats = json.loads(out_str.decode('utf-8'))
-    return len(gpustats['gpus'])
+# ---------- concurrency + throttling state ----------
+_gpustat_lock         = threading.Lock()
+_gpustat_next_allowed = 0.0          # epoch time
+
+def _device_count() -> int:
+    """Return the number of visible NVIDIA GPUs."""
+    return pynvml.nvmlDeviceGetCount()
+
+def _memory_used(index: int) -> int:
+    """Bytes of memory currently allocated on GPU `index`."""
+    handle   = pynvml.nvmlDeviceGetHandleByIndex(index)
+    mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+    return mem_info.used                         # integer bytes
+
+
+# ------------------------------------------------------------------
+# Public API
+# ------------------------------------------------------------------
+
+def get_freest_gpu(gpustat_delay: float = 10.0) -> str:
+    """
+    Return a device string ('cuda:<idx>') for the GPU with the
+    least memory currently allocated.  Calls are rate‑limited so that
+    NVML is hit at most once every `gpustat_delay` seconds across
+    all threads, mirroring the original gpustat-based behaviour.
+    """
+    global _gpustat_next_allowed
+
+    with _gpustat_lock:
+        now = time.time()
+        if now < _gpustat_next_allowed:          # honour throttle window
+            time.sleep(_gpustat_next_allowed - now)
+
+        n = _device_count()
+        if n == 0:
+            raise RuntimeError("No NVIDIA GPUs detected by NVML.")
+
+        # O(n) scan for least‑used card
+        min_used, best_idx = None, 0
+        for idx in range(n):
+            used = _memory_used(idx)
+            if min_used is None or used < min_used:
+                min_used, best_idx = used, idx
+
+        _gpustat_next_allowed = time.time() + gpustat_delay
+
+    return f"cuda:{best_idx}"
+
+
+def get_num_gpus() -> int:
+    """Return the total number of NVIDIA GPUs visible to NVML."""
+    return _device_count()
 
 def run_subprocess(command, log_file):
     if log_file == None:

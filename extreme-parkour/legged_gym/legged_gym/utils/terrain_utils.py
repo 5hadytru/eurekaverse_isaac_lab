@@ -10,7 +10,6 @@ from scipy.ndimage import binary_dilation
 import inspect
 import uuid
 import importlib.util
-from pxr import Usd, UsdGeom, UsdPhysics, UsdShade, Gf
 from datetime import datetime
 import torch
 

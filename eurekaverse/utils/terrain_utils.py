@@ -12,7 +12,6 @@ import random  # This is used by set_terrain in compute_terrain_stats()
 from eurekaverse.utils.misc_utils import suppress_output
 
 with suppress_output():
-    from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg
     from legged_gym.utils import set_seed
     from legged_gym.utils.terrain_utils import fix_terrain, calc_direct_path_heights
 
@@ -229,6 +228,3 @@ def extract_fixed_terrains(cfg, train_log_file):
         if f"Automatically fixed terrain {terrain_id}" in train_log:
             fixed_terrains.append(terrain_id)
     return fixed_terrains
-
-def get_num_total_goals():
-    return LeggedRobotCfg.terrain.num_goals

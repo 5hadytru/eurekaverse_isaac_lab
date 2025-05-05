@@ -29,11 +29,7 @@ replay_idx_lock = threading.Lock()
 replay_initial_only = False  # Set to True to only replay initial queries and generate evolution queries from scratch
 
 gpt_pricing = {
-    "gpt-4o-2024-08-06": (2.5e-6, 1e-5),
-    "gpt-4o-2024-05-13": (5e-6, 1.5e-5),  # GPT-4o: $0.005/1K input, $0.015/1K output
-    "gpt-4-0125-preview": (1e-5, 3e-5),   # GPT-4 Turbo: $0.01/1K input, $0.03/1K output
-    "gpt-4-0613": (3e-5, 6e-5),           # GPT-4: $0.03/1K input, $0.06/1K output
-    "gpt-3.5-turbo-0125": (5e-7, 1.5e-6)  # GPT-3.5 Turbo: $0.0005/1K input, $0.0015/1K output
+     "gpt-4.1-2025-04-14": (2e-6, 8e-6),
 }
 
 def prepare_prompts(cfg):
@@ -109,7 +105,8 @@ def query_gpt(cfg, messages, num_samples=1):
                 responses = client.chat.completions.create(
                     model=cfg.gpt_model,
                     messages=messages,
-                    n=num_samples
+                    n=num_samples,
+                    timeout=1800.0
                 )
                 break
             except Exception as e:
