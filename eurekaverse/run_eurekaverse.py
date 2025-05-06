@@ -24,6 +24,27 @@ os.environ["WANDB_SILENT"] = "True"
 httpx_logger = logging.getLogger("httpx")
 httpx_logger.setLevel(logging.WARNING)
 
+python_prefix = "/isaaclab/isaaclab.sh -p" # prefix for using python
+env_vars_sh = "/isaaclab/workspace/export_vars.sh" # path to script that exports env vars
+
+# load env vars from script (e.g api keys)
+assign_rx = re.compile(r'^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$')
+
+with open(env_vars_sh, "r") as f:
+    for raw in f:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue                           # comment / blank → skip
+        m = assign_rx.match(line)
+        if not m:
+            # Non‑assignment lines (functions, if‑blocks, etc.) are ignored.
+            continue
+        key, val = m.groups()
+        if (val.startswith(("'", '"')) and val.endswith(("'", '"'))
+                and len(val) >= 2):
+            val = val[1:-1]                   # drop surrounding quotes
+        os.environ[key] = val
+
 from eurekaverse.utils.terrain_utils import set_terrain, copy_terrain, setup_generated_terrains, get_eval_stats_from_file, stat_to_str, get_terrain_descriptions, extract_fixed_terrains, get_terrain_stats_string
 from eurekaverse.utils.gpt_utils import prepare_prompts, query_gpt_initial, query_gpt_evolution, log_gpt_query
 from eurekaverse.utils.misc_utils import get_num_gpus, get_freest_gpu, run_subprocess, wait_subprocess, seeded
@@ -60,34 +81,6 @@ eval_testing_stats = {}                          # Logged
 eval_testing_stats_per_terrain = {}              # (Unused)
 
 num_gpus = get_num_gpus()
-
-python_prefix = "/isaaclab/isaaclab.sh -p" # prefix for using python
-env_vars_sh = "/isaaclab/workspace/export_vars.sh" # path to script that exports env vars
-
-def load_env_from_shell_file(path: str | os.PathLike) -> None:
-    """
-    Read a file that contains lines like
-        VAR=value
-        export OTHER=value
-    and inject those pairs into os.environ in O(N) time.
-    """
-    assign_rx = re.compile(r'^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$')
-
-    with open(path, "r") as f:
-        for raw in f:
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue                           # comment / blank → skip
-            m = assign_rx.match(line)
-            if not m:
-                # Non‑assignment lines (functions, if‑blocks, etc.) are ignored.
-                continue
-            key, val = m.groups()
-            if (val.startswith(("'", '"')) and val.endswith(("'", '"'))
-                    and len(val) >= 2):
-                val = val[1:-1]                   # drop surrounding quotes
-            os.environ[key] = val
-
 
 def run_training(cfg, it, parallel_run_id, load_exptid):
     log_file = output_dir / f"train_iter-{it}_run-{parallel_run_id}.log"
@@ -464,8 +457,6 @@ def main(cfg):
     global run_id, wandb_id, output_dir, gpt_queries_dir, check_execution_dir, renders_dir
 
     assert sum(cfg.best_run_proportions) == 1, "Best run proportions must sum to 1!"
-
-    load_env_from_shell_file(env_vars_sh)
 
     working_dir = Path(hydra.utils.get_original_cwd())
     output_dir = Path(os.getcwd())

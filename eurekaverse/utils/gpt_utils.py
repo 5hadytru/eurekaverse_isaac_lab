@@ -28,7 +28,7 @@ with open(Path(f"{file_dir}/../gpt/terrain_example_evolution.py")) as f:
 
 # single global client with a sane read/connect timeout
 client = OpenAI(
-    http_client=httpx.Client(timeout=httpx.Timeout(60, connect=10))
+    http_client=httpx.Client(timeout=httpx.Timeout(1200, connect=10))
 )
 replay_run = ""  # Set to a log directory (e.g., "outputs/.../gpt_queries") to replay a specific run's LLM responses
 replay_idx = 0   # Used to keep track of which response to load from a run (if replay_run is set)
@@ -85,14 +85,13 @@ def query_gpt_evolution(cfg, prev_terrain_code, eval_statistics, terrain_stats, 
 @tenacity.retry(wait=tenacity.wait_random_exponential(min=1, max=20),
                 reraise=True,
                 retry=tenacity.retry_if_exception_type(RateLimitError))
-def _one_completion(msgs: List[dict], model: str, max_toks: int = 300) -> str:
+def _one_completion(msgs: List[dict], model: str) -> str:
     """
     Do a single streaming completion so the connection never goes idle.
     """
     stream = client.chat.completions.create(
         model=model,
         messages=msgs,
-        max_tokens=max_toks,
         stream=True
     )
     pieces = []
