@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A sequence of parallel balance beams with varying gap widths for quadruped agility and balance."""
+    """Stepping-stone balance beams: narrow beams of varying widths over a pit to test balance and precise foot placement."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,77 +11,70 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Balance beam parameters
-    # Difficulty increases: beams narrower and gaps wider
-    min_beam_width = 0.25
-    max_beam_width = 0.45
-    beam_width = max_beam_width - difficulty * (max_beam_width - min_beam_width)  # [0.45m .. 0.25m]
-    beam_width = max(beam_width, 0.22)  # Don't get too narrow
-    beam_width_idx = m_to_idx(beam_width)
+    # Parameters
+    mid_y = m_to_idx(width) // 2
+    spawn_length = m_to_idx(2)
+    total_length = m_to_idx(length)
+    total_width = m_to_idx(width)
 
-    beam_length = 1.5 # 1.5m per beam
-    beam_length_idx = m_to_idx(beam_length)
+    # Pit setup
+    # Make ground flat up to spawn region
+    height_field[:spawn_length, :] = 0
 
-    # Gap width between beams
-    min_gap_width = 0.22
-    max_gap_width = 0.7
-    gap_width = min_gap_width + difficulty * (max_gap_width - min_gap_width)  # [0.22..0.7]
-    gap_width_idx = m_to_idx(gap_width)
+    # Everything after spawn is a pit of -0.85 m
+    height_field[spawn_length:, :] = -0.85
 
-    # Beam elevation -- increase a bit for moderate challenge (always above 0)
-    min_beam_height = 0.07 + difficulty * 0.07  # [0.07, 0.14]
-    max_beam_height = 0.13 + difficulty * 0.12  # [0.13, 0.25]
+    # Beam parameters based on difficulty
+    num_beams = 6
+    base_beam_length = 1.4
+    base_beam_width = 1.1 - 0.5 * difficulty   # 1.1 m (easy) to 0.6 m (hard)
+    base_beam_height = 0.0   # Top flush with spawn
 
-    spacing = beam_length_idx + gap_width_idx
-    total_beams = 8
+    # The robot is 0.28 m wide; at hardest, beam is twice that (0.6 - enough for challenge, not frustration)
+    beam_lengths = []
+    beam_widths = []
+    beam_offsets = []
+    dx_between = (length - 2.8 - num_beams * base_beam_length) / (num_beams + 1)
+    dx_between = max(dx_between, 0.18)  # Ensure minimal separation possible
 
-    # The beams are placed in a zig-zag but always run lengthwise roughly along x (forward), some with slight offsets
-    mid_y_idx = m_to_idx(width / 2)
-    start_x_idx = m_to_idx(2)  # No obstacles before 2m, let robot spawn with clearance
+    cur_x = float(2.0)
+    beam_centers_x = []
+    beam_centers_y = []
 
-    # For first 7 beams, rest of course is obstacle-free at end
-    for i in range(7):
-        x1 = start_x_idx + i * spacing
-        x2 = x1 + beam_length_idx
-        # Each beam placed at a slightly shifted y (zig-zag: [-0.4,0.4] meters)
-        offset_y = random.uniform(-0.4, 0.4)
-        y_center = mid_y_idx + m_to_idx(offset_y)
-        y1 = max(y_center - beam_width_idx//2, 0)
-        y2 = min(y_center + (beam_width_idx+1)//2, m_to_idx(width))
+    for i in range(num_beams):  # Place beams
+        # Random offset in y for each beam (snake/wave pattern to force minor turning or repositioning)
+        y_offset = random.uniform(-0.5, 0.5) * (0.5 + 0.9 * difficulty)  # wider variation as diff ↑
+        x1 = cur_x
+        x2 = cur_x + base_beam_length
+        y_center = (width / 2) + y_offset
+        y1 = y_center - base_beam_width / 2
+        y2 = y_center + base_beam_width / 2
 
-        # Randomize beam height within bounds for added challenge
-        beam_height = random.uniform(min_beam_height, max_beam_height)
-        height_field[x1:x2, y1:y2] = beam_height
-        
-        # The area below the beams is a pit with negative height (no climbing back onto beam)
-        if i == 0:
-            pit_x1 = x1
-            pit_y1, pit_y2 = 0, m_to_idx(width)
-            height_field[pit_x1:x2, pit_y1:pit_y2] = min(height_field[pit_x1:x2, pit_y1:pit_y2], -0.8 - 0.2*difficulty)
+        # Convert to indices; clip to bounds
+        x1i, x2i = max(m_to_idx(x1), spawn_length), min(m_to_idx(x2), total_length)
+        y1i, y2i = max(m_to_idx(y1), 0), min(m_to_idx(y2), total_width)
+        # Draw beam: top surface flush with spawn, pit below
+        height_field[x1i:x2i, y1i:y2i] = base_beam_height
 
-        else:
-            prev_x2 = start_x_idx + (i-1) * spacing + beam_length_idx
-            pit_start = prev_x2
-            pit_end = x2
-            height_field[pit_start:pit_end, 0:m_to_idx(width)] = -0.8 - 0.2*difficulty
+        # Store for goal position
+        beam_centers_x.append((x1i + x2i) // 2)
+        beam_centers_y.append((y1i + y2i) // 2)
+        # Next beam
+        cur_x += base_beam_length + dx_between + random.uniform(-0.1, 0.1) # slight jitter
 
-        # Set goal in the center of each beam, about 60% along its length
-        gx = x1 + int(0.6*beam_length_idx)
-        gy = y_center
-        if i < 7:
-            goals[i] = [gx, gy]
+    # Entry and exit ramp, and final flat ground at end
+    # Ramps are not required; robot climbs on/off from ground level.
 
-    # Fill the area after the last beam, make it flat and set final goal at the end
-    last_beam_x2 = start_x_idx + 6*spacing + beam_length_idx
-    height_field[last_beam_x2:, :] = 0
-
-    goals[7] = [last_beam_x2 + m_to_idx(0.6), mid_y_idx]  # final goal at course end
-
-    # Set first goal at spawn, middle of width, after 1 meter
-    goals[0] = [m_to_idx(1), mid_y_idx]
-    # (Overwritten by beam 1 above; we leave this as in case the zig affects precision.)
-
-    # Remove pits from spawn area
-    height_field[:start_x_idx, :] = 0
+    # Set Goals: 
+    # 0 - Spawn point right before pit
+    goals[0] = [m_to_idx(1.6), mid_y]
+    # 1-6: Center of each beam
+    for i in range(num_beams):
+        goals[i+1, 0] = beam_centers_x[i]
+        goals[i+1, 1] = beam_centers_y[i]
+    # 7: Exit goal at end, back in flat ground (map x = length-0.7, center y)
+    x_exit = m_to_idx(length - 0.7)
+    goals[7] = [x_exit, mid_y]
+    height_field[x_exit:, :] = 0  # Put exit ground at height 0
 
     return height_field, goals

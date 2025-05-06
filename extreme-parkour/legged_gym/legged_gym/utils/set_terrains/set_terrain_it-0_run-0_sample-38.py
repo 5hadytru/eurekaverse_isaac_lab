@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A sequence of angled ramps to test dynamic balance when climbing/descending and turning."""
+    """Repeating narrow balance beams for quadrupedal balance and turning control."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,85 +11,100 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Parameters for ramp obstacles
-    min_ramp_length = 1.2
-    max_ramp_length = 2.5
-    min_ramp_width = 1.2
-    max_ramp_width = 2.0
-    min_angle = 8    # degrees
-    max_angle = 26   # degrees
-    padding = 0.4    # space between ramps (meters)
-    shift_y = 0.8    # how far off-center ramps can be
-    num_ramps = 4
+    # --- Course parameters ---
+    # The beams are 0.4-0.5 meters wide (narrow, but allowed if no climbing)
+    beam_width = 0.40 + 0.10 * (1 - difficulty)
+    beam_width_idx = m_to_idx(beam_width)
 
-    # Ramp size and angles scale with difficulty
-    ramp_lengths = np.linspace(min_ramp_length, max_ramp_length, num_ramps) + difficulty * 0.3
-    ramp_widths = np.linspace(max_ramp_width, min_ramp_width, num_ramps)
-    ramp_angles = np.linspace(min_angle, max_angle, num_ramps) + difficulty * 10.0
-    ramp_angles = np.clip(ramp_angles, min_angle, max_angle)
+    # Beams length: Cover the full width or length, but alternate orientation
+    base_beam_length = 2.75 - 1.5 * difficulty    # Beams become shorter with difficulty
+    gap_size = 0.25 + 0.55 * difficulty           # Gaps get larger with difficulty
+    beam_height = 0.12 + 0.08 * difficulty        # Beams raised off ground more with difficulty
 
-    spawn_length = m_to_idx(2)
-    mid_y = m_to_idx(width / 2)
+    length_idx = m_to_idx(length)
+    width_idx  = m_to_idx(width)
 
-    # Ensure start region is clear and the first goal is just after spawn
-    height_field[0:spawn_length, :] = 0
-    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]
+    # Initial flat area (spawn)
+    spawn_length = m_to_idx(2.0)
+    height_field[:spawn_length, :] = 0.0
+    mid_y = width_idx // 2
 
-    # Create angled ramps alternatively left and right, with elevation changes, forming an S-bend course
+    # Set first goal in spawn zone, center
+    goals[0] = [m_to_idx(1.0), mid_y]
+
+    # Alternate between longitudinal and lateral beams, forcing turns 
     cur_x = spawn_length
-    sgn = 1  # Used to alternate ramp direction (left/right)
-    for i in range(num_ramps):
-        ramp_len = m_to_idx(ramp_lengths[i])
-        ramp_wid = m_to_idx(ramp_widths[i])
-        ramp_ang_rad = np.deg2rad(ramp_angles[i])
+    y_left = m_to_idx(0.7)
+    y_right = width_idx - m_to_idx(0.7)
+    x_reach = length_idx - m_to_idx(1.0)
+    goal_ptr = 1
+    orientation = 0  # 0: x-long/forward, 1: y-long/across
 
-        # Y-position offset to cause zig-zag; padding ensures ramps stay within field
-        y_offset = int(sgn * m_to_idx(shift_y))
-        y_center = np.clip(mid_y + y_offset, m_to_idx(0.5 * ramp_wid), m_to_idx(width - 0.5 * ramp_wid) - 1)
+    for beam_num in range(1, 7): # 6 balance beams, 7 total transitions
+        # Alternate sides
+        if orientation == 0:
+            # Forward beam
+            beam_length = min(m_to_idx(base_beam_length + random.uniform(-0.25, 0.25)), x_reach - cur_x)
+            x1, x2 = cur_x, cur_x + beam_length
+            mid_beam_y = mid_y + random.randint(-m_to_idx(2.0) + beam_width_idx, m_to_idx(2.0) - beam_width_idx)
+            y1 = mid_beam_y - beam_width_idx // 2
+            y2 = mid_beam_y + beam_width_idx // 2
+            # Draw the beam 
+            height_field[x1:x2, y1:y2] = beam_height
 
-        x1 = cur_x
-        x2 = np.clip(x1 + ramp_len, 0, m_to_idx(length)-1)
-        y1 = max(y_center - ramp_wid // 2, 0)
-        y2 = min(y_center + ramp_wid // 2, m_to_idx(width)-1)
+            # Place next goal near end of this beam
+            gx = int(x2 - beam_length // 3) if beam_num % 2 == 1 else int(x2 - 1)
+            gy = int((y1 + y2) // 2)
+            goals[goal_ptr] = [gx, gy]
+            goal_ptr += 1
 
-        # Height delta for this ramp, positive up, negative ramps for descending at high difficulty
-        h_sign = 1 if i % 2 == 0 else (-1 if difficulty > 0.4 else 1)
-        h_delta = h_sign * ramp_len * field_resolution * np.tan(ramp_ang_rad)
-
-        # Ramp heights: start at the previous ramp's elevation
-        if i == 0:
-            base_h = 0
+            # Add a lateral gap: all ground in front of this beam is dropped
+            gap = m_to_idx(gap_size + random.uniform(-0.05, 0.06))
+            cur_x = x2 + gap
+            # Remove all height in the gap
+            height_field[x2:cur_x, :] = -0.3 - 0.8 * difficulty
         else:
-            base_h = float(height_field[x1-1, mid_y])
+            # Lateral beam runs across y axis, small segment
+            y_beam_center = random.randint(y_left + beam_width_idx // 2, y_right - beam_width_idx // 2)
+            y1 = y_beam_center - beam_width_idx // 2
+            y2 = y_beam_center + beam_width_idx // 2
+            beam_length = m_to_idx(1.2 + 0.7 * (1 - difficulty))
+            if cur_x + beam_length > x_reach:
+                beam_length = x_reach - cur_x
+            x1, x2 = cur_x, cur_x + beam_length
+            height_field[x1:x2, y1:y2] = beam_height
 
-        for xi in range(x1, x2):
-            frac = (xi - x1) / max(1, (x2 - x1 - 1))
-            ramp_h = base_h + h_delta * frac
-            height_field[xi, y1:y2] = ramp_h
+            # Place next goal midway along the lateral beam, offset in y for a turn
+            gx = int((x1 + x2) // 2)
+            gy = int(y_beam_center)
+            goals[goal_ptr] = [gx, gy]
+            goal_ptr += 1
 
-        # Place a goal at the center, portion way up the ramp (not exactly at the tip to avoid edges)
-        goal_x = int(x1 + 0.7 * (x2 - x1))
-        goal_y = int((y1 + y2)/2)
-        goals[i+1] = [goal_x, goal_y]
+            # Add a forward gap after the beam
+            gap = m_to_idx(gap_size + random.uniform(-0.05, 0.05))
+            cur_x = x2 + gap
+            height_field[x2:cur_x, :] = -0.3 - 0.8 * difficulty
 
-        # Add flat ground/padding between ramps, ensure transition is not abrupt
-        pad_len = m_to_idx(padding + 0.2 * difficulty)
-        next_base = base_h + h_delta
-        x_pad_start = x2
-        x_pad_end = min(x_pad_start + pad_len, m_to_idx(length)-1)
-        if x_pad_start < x_pad_end:
-            height_field[x_pad_start:x_pad_end, :] = next_base
-        cur_x = x_pad_end
+        orientation = 1 - orientation  # Switch between orientations
 
-        # Change ramp direction
-        sgn *= -1
+        # Stop if close to course end
+        if cur_x >= x_reach:
+            break
 
-    # Place further flat ground at the end, and final goals
-    end_flat = m_to_idx(2.0)
-    height_field[cur_x:cur_x+end_flat, :] = float(height_field[cur_x-1, mid_y])
-    goals[5] = [cur_x + end_flat // 3, mid_y]
-    goals[6] = [cur_x + 2*end_flat // 3, mid_y]
-    # Last goal at course end
-    goals[7] = [m_to_idx(length) - m_to_idx(0.6), mid_y]
+    # --- Last goal: End zone ---
+    end_x = min(length_idx - 1, cur_x + m_to_idx(0.7))
+    height_field[end_x:, :] = 0.0
+    goals[7] = [end_x - m_to_idx(0.4), mid_y]
+
+    # If fewer than 8 goals have been placed, interpolate additional ones evenly
+    final_goal_num = np.where(~(goals[:,0] == 0) & ~(goals[:,1] == 0))[0]
+    if len(final_goal_num):
+        last_goal = final_goal_num[-1] + 1
+    else:
+        last_goal = 1
+    for g in range(last_goal, 7):
+        # linearly place remaining goals along the central X trajectory
+        gx = int(spawn_length + (end_x - spawn_length) * (g - last_goal + 1) / (7 - last_goal + 1))
+        goals[g] = [gx, mid_y]
 
     return height_field, goals

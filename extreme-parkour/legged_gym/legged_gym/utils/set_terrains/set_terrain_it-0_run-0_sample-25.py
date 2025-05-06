@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Alternating balance beams and narrow stepping stones for quadruped dynamic stability and precise paw placement."""
+    """Stepping stone trail: raised, offset stone slabs that require lateral and longitudinal foot placement accuracy."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -10,79 +10,70 @@ def set_terrain(length, width, field_resolution, difficulty):
 
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
+    
+    # Step stone parameters (size depends on quadruped size and difficulty)
+    robot_length, robot_width = 0.645, 0.28
+    stone_length = 0.7 + 0.2 * (1 - difficulty)       # At least 0.7m long
+    stone_width  = 0.55 + 0.3 * (1 - difficulty)      # At least wider than robot width
+    stone_height = 0.15 + 0.15 * difficulty           # Stones grow taller with difficulty
+    gap = 0.30 + 0.45 * difficulty                    # Gap between stones grows with difficulty
+    
+    stone_length_idx = m_to_idx(stone_length)
+    stone_width_idx  = m_to_idx(stone_width)
+    gap_idx          = m_to_idx(gap)
 
-    # Parameters
-    mid_y = m_to_idx(width) // 2
-    spawn_length = m_to_idx(2.0)
-    n_obstacles = 4  # 4 beams, 4 stone gaps = 8 segments before finish
-    start_x = spawn_length
-    finish_buffer = m_to_idx(1.0)
+    spawn_x = m_to_idx(1)  # spawn at x = 1m
+    spawn_y = m_to_idx(width / 2)
+    height_field[:spawn_x+1,:] = 0  # spawn area
 
-    # Base ground is a shallow pit, so off-beam is a penalty
-    height_field[spawn_length:, :] = -0.15 - 0.25*difficulty  # deeper pit at higher difficulty
+    # Place initial goal in spawn area
+    goals[0] = [spawn_x, spawn_y]
+    
+    # The path: alternate step stones left and right about a center track
+    step_n = 7
+    offset_mag = int(m_to_idx(0.65 + 0.1 * difficulty))  # How far each stone may be offset from center
+    center_y = spawn_y
+    cur_x = spawn_x + m_to_idx(0.6)
+    
+    for i in range(step_n):
+        # Alternate left-right offset, but ensure within the field
+        dir_ = -1 if i % 2 == 0 else 1
+        # Move further off-center as difficulty increases
+        offset_y = dir_ * (offset_mag - random.randint(0, m_to_idx(0.2)))
+        y_c = int(np.clip(center_y + offset_y, stone_width_idx//2, m_to_idx(width) - stone_width_idx//2 - 1))
+        
+        # Stone bounds
+        x1 = int(cur_x)
+        x2 = int(np.clip(cur_x + stone_length_idx, 0, m_to_idx(length)))
+        y1 = int(y_c - stone_width_idx // 2)
+        y2 = int(y_c + stone_width_idx // 2)
+        # Ensure within bounds
+        x1, x2 = max(x1, 0), min(x2, m_to_idx(length))
+        y1, y2 = max(y1, 0), min(y2, m_to_idx(width))
+        
+        # Place the stone: set raised height
+        hf_height = stone_height * (0.9 + 0.2 * random.random())  # some variation
+        height_field[x1:x2, y1:y2] = hf_height
 
-    # Function for adding a balance beam: narrow, long, elevated "bridge"
-    def add_beam(x1, x2, y_center, width, height):
-        y1 = int(np.clip(y_center - width // 2, 0, height_field.shape[1]))
-        y2 = int(np.clip(y_center + width // 2, 0, height_field.shape[1]))
-        height_field[x1:x2, y1:y2] = height
+        # Goal on this stone, slightly random within stone area
+        goals[i+1] = [ (x1 + x2)//2, int(np.clip((y1 + y2)//2 + random.randint(-2,2), 0, m_to_idx(width)-1))]
+        
+        # Move to next stone position
+        cur_x = x2 + gap_idx
 
-    # Function for adding stepping stone: short, small round platform
-    def add_stepping_stone(x_center, y_center, r, height):
-        x_idx = np.arange(height_field.shape[0])
-        y_idx = np.arange(height_field.shape[1])
-        X, Y = np.meshgrid(x_idx, y_idx, indexing='ij')
-        mask = ((X - x_center) ** 2 + (Y - y_center) ** 2) <= r ** 2
-        height_field[mask] = height
+    # Surround the stepping stones with pits: set all other unraised areas to -0.7m (except spawn area)
+    pit_height = -0.7 - 0.3 * difficulty  # Deeper pit at higher difficulty
+    field_len = m_to_idx(length)
+    for x in range(spawn_x+1, field_len):
+        for y in range(m_to_idx(width)):
+            # If not part of a step stone
+            if height_field[x,y] < 0.01:
+                height_field[x,y] = pit_height
 
-    # Beam and stone sizes scale with difficulty
-    beam_length = m_to_idx(1.7 - 0.3*difficulty)
-    beam_width = m_to_idx(1.0 - 0.55*difficulty)  # as thin as 45cm at max difficulty
-    beam_height = 0.0 + 0.05 + 0.15*difficulty    # 5-20cm above base
-
-    stone_radius = m_to_idx(0.3 - 0.08*difficulty)        # 30-22cm radius (so 44cm minimum width)
-    stone_height = 0.0 + 0.08 + 0.18*difficulty           # 8-26cm height
-    stone_gap = m_to_idx(0.4 + 0.3*difficulty)            # distance between stone centers
-
-    cur_x = start_x
-    section_spacing = m_to_idx(0.3)   # gap between last stone/beam and next beam/stone
-
-    # Start with spawn area flat
-    height_field[:spawn_length, :] = 0.0
-    goals[0] = [m_to_idx(0.8), mid_y]     # first goal is just past spawn
-
-    # Alternate beams and stones
-    goal_idx = 1
-    for seg in range(n_obstacles):
-        # 1. Add balance beam
-        next_x = min(cur_x + beam_length, height_field.shape[0]-finish_buffer)
-        beam_y = mid_y + m_to_idx( random.uniform(-0.7 + 1.4*random.random(), 0.7 - 1.4*random.random()) )
-        add_beam(cur_x, next_x, beam_y, beam_width, beam_height)
-
-        # Place goal mid-beam
-        goals[goal_idx] = [cur_x + (next_x-cur_x)//2, beam_y]
-        goal_idx += 1
-
-        cur_x = next_x + section_spacing
-
-        # 2. Add stepping stones (3 stones across the pit)
-        if seg < n_obstacles: # last segment does not need more stones after finish
-            n_stones = 3
-            stones_y = np.linspace(mid_y - m_to_idx(0.7), mid_y + m_to_idx(0.7), n_stones)
-            stones_x = [cur_x + i*stone_gap for i in range(n_stones)]
-            for x_c, y_c in zip(stones_x, stones_y):
-                add_stepping_stone(int(x_c), int(y_c), stone_radius, stone_height)
-
-            # Place goal at farthest stone
-            goals[goal_idx] = [stones_x[-1], stones_y[-1]]
-            goal_idx += 1
-
-            # Prepare for next beam
-            cur_x = int(stones_x[-1]) + section_spacing
-
-    # Final safe zone
-    height_field[cur_x:, :] = 0.0
-    # Place last goal at finish area
-    goals[-1] = [min(cur_x + m_to_idx(0.9), height_field.shape[0]-1), mid_y]
+    # Final goal in flat safe zone at end of course
+    safezone_len = m_to_idx(1.0)
+    end_x = field_len - safezone_len
+    height_field[end_x:, :] = 0
+    goals[-1] = [end_x + safezone_len//2, center_y]
 
     return height_field, goals

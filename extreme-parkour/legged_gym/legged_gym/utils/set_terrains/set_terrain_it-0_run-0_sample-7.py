@@ -2,89 +2,70 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Sequence of elevated, narrow balance beams with periodic 90-degree turns for testing precise foot placement and turning control."""
+    """Series of staggered balance beams above a pit, requiring narrow-footed, precise traversal."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
 
-    # Field setup
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Parameters
-    # Balance beam parameters scale with difficulty:
-    # Higher: narrower and higher; Lower: wider and lower.
-    beam_width = 0.7 - 0.3 * difficulty       # from 0.7m (easy) to 0.4m (hard; must be >= 0.4m)
-    beam_width = max(0.4, beam_width)
-    beam_width_idx = m_to_idx(beam_width)
-    beam_height = 0.05 + 0.25 * difficulty    # from 0.05m (easy, curb) to 0.3m (hard, step up)
-    beam_length = 2.1 - 1.0 * difficulty      # from 2.1m (easy, long) to 1.1m (hard, short)
-    beam_length = max(1.1, beam_length)
-    beam_length_idx = m_to_idx(beam_length)
-
+    # Course parameters (balance beam skill test)
+    # Balance beams are narrow, long planks, suspended above a pit
+    beam_widths = np.linspace(0.45, 0.25 + 0.15 * (1-difficulty), 6)  # meters; more difficult = narrower
+    beam_length = 1.6 + 0.3 * difficulty  # meters; slightly longer at high difficulty
+    beam_height = 0.12 + 0.16 * difficulty  # meters
+    pit_depth = -0.7 - 0.8 * difficulty     # meters; deeper pit at high difficulty
+    spawn_length = m_to_idx(2)
     mid_y = m_to_idx(width) // 2
 
-    # Locations for beams (alternating horizontal/vertical for zig-zag)
-    # Always keep beams inside bounds (leave 0.2m clearance from edges)
-    side_clearance = m_to_idx(0.2)
-    cur_x = m_to_idx(1.0)  # Start after spawn-safe area
-    cur_y = mid_y
+    # Helper to add a beam, returns center (x, y) for goals
+    def add_beam(center_x, center_y, length, width, height):
+        lx = m_to_idx(length / 2)
+        wx = m_to_idx(width / 2)
+        x1, x2 = max(0, center_x-lx), min(m_to_idx(length), center_x+lx)
+        y1, y2 = max(0, center_y-wx), min(m_to_idx(width), center_y+wx)
+        height_field[x1:x2, y1:y2] = height
+        return (center_x, center_y)
 
-    # Clear spawn area
-    spawn_limit_x = m_to_idx(2.0)
-    height_field[:spawn_limit_x, :] = 0
+    # Set pit, preserve flat ground at start and finish
+    height_field[spawn_length:, :] = pit_depth
+    finish_length = m_to_idx(0.8)
+    height_field[-finish_length:, :] = 0
 
-    # Setup initial goal at the starting location
-    goals[0] = [m_to_idx(1.0), cur_y]
+    # Set spawn goal
+    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]
 
-    direction = 0  # 0: right (+x), 1: up (+y), 2: left (-x), 3: down (-y)
-    increments = [(1, 0), (0, 1), (-1, 0), (0, -1)]
-    num_beams = 7
+    # Parameters for staggering the beams
+    zigzag_displacement = 0.5 + 0.3 * difficulty
+    zigzag_displacement = min(zigzag_displacement, (width / 2) - min(beam_widths)/2 - 0.15)
+    beam_start = spawn_length + m_to_idx(0.5)  # leave some runway before first beam
+    inter_beam_gap = 0.4 + 0.4 * difficulty
 
-    for i in range(num_beams):
-        # Set beam center location
-        if direction % 2 == 0:
-            # Beam along x (horizontal)
-            x1 = cur_x
-            x2 = min(x1 + beam_length_idx, height_field.shape[0] - side_clearance)
-            y1 = max(cur_y - beam_width_idx // 2, side_clearance)
-            y2 = min(cur_y + (beam_width_idx + 1) // 2, height_field.shape[1] - side_clearance)
-            height_field[x1:x2, y1:y2] = beam_height
-            # Set goal for this beam near far end center
-            goal_x = x2 - m_to_idx(0.5)
-            goal_y = (y1 + y2) // 2
-            goals[i+1] = [goal_x, goal_y]
-            # Move to far end
-            cur_x = x2 - 1  # -1 for overlap
-            cur_y = goal_y
-        else:
-            # Beam along y (vertical)
-            y1 = cur_y
-            y2 = min(y1 + beam_length_idx, height_field.shape[1] - side_clearance)
-            x1 = max(cur_x - beam_width_idx // 2, side_clearance)
-            x2 = min(cur_x + (beam_width_idx + 1)//2, height_field.shape[0] - side_clearance)
-            height_field[x1:x2, y1:y2] = beam_height
-            # Set goal for this beam near far end center
-            goal_x = (x1 + x2) // 2
-            goal_y = y2 - m_to_idx(0.5)
-            goals[i+1] = [goal_x, goal_y]
-            # Move to far end
-            cur_x = goal_x
-            cur_y = y2 - 1
+    # Place six beams, staggered left and right
+    cur_x = beam_start
+    y_center = mid_y
+    for i in range(6):
+        width_beam = beam_widths[i]
+        # Zig-zag: alternate sign for lateral offset
+        sign = -1 if i % 2 else 1
+        offset = sign * m_to_idx(zigzag_displacement)
+        y_center_beam = int(np.clip(mid_y + offset, m_to_idx(width_beam/2)+2, m_to_idx(width)-m_to_idx(width_beam/2)-2))
 
-        # Turn 90 degrees (right turn for odd-indexed beam)
-        direction = (direction + 1) % 4
+        # Place beam
+        beam_cx = int(cur_x + m_to_idx(beam_length/2))
+        add_beam(beam_cx, y_center_beam, beam_length, width_beam, beam_height)
+        # Set goal at center of beam
+        goals[i+1] = [beam_cx, y_center_beam]
 
-    # Final goal: just after last beam, on flat ground
-    last_x = min(cur_x + m_to_idx(0.7), height_field.shape[0] - side_clearance)
-    last_y = min(cur_y + m_to_idx(0.7), height_field.shape[1] - side_clearance)
-    goals[7] = [last_x, last_y]
+        # Next beam further along x
+        cur_x += m_to_idx(beam_length + inter_beam_gap)
+        # Next beam zig-zags laterally
 
-    # Make terrain surrounding beams (except spawn) a negative pit
-    pit_depth = -0.25 - 0.5 * difficulty
-    # For all indices > spawn_limit_x, set to pit except where height_field > 0 (the beams)
-    pit_mask = (height_field == 0)
-    height_field[spawn_limit_x:, :][pit_mask[spawn_limit_x:, :]] = pit_depth
+    # Final goal after last beam (return to flat ground)
+    final_goal_x = min(cur_x + m_to_idx(0.7), m_to_idx(length) - m_to_idx(0.6))
+    goals[7] = [final_goal_x, mid_y]
+    height_field[final_goal_x:, :] = 0
 
     return height_field, goals

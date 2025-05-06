@@ -2,100 +2,81 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A sequence of alternating balance beams and narrow planks above a sunken floor, encouraging precise foot placement and straight/turning walking."""
+    """A sequence of "see-saw" tilting balance beams the quadruped must cross, testing dynamic balancing."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
-    
-    # Field size and spawn safe zone
+
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
-    spawn_length = m_to_idx(2)                  # Spawn at 0-2 meters is always flat
-    mid_y = m_to_idx(width / 2)                 # Center line
-    
-    # Parameters for beams/planks (values expand w/difficulty)
-    beam_width = 0.30 + 0.10 * (1 - difficulty)   # 0.4m wide at easy, 0.3m at hard, matches rule #5 rare exception
-    beam_length = 1.6 + 0.4 * difficulty         # 1.6m at easy, 2m at hard
-    plank_width = 0.55 - 0.12 * difficulty       # 0.55m at easy, 0.43m at hard (wider than the robot but narrower than a beam)
-    plank_length = 1.0 + 0.7 * difficulty        # Plank 1m-1.7m long
-    beam_height = 0.12 + 0.12 * difficulty       # 0.12m high at easy, up to 0.24m at hard
-    pit_depth = 0.35 + 0.60 * difficulty         # Sunken floor, deep at hard
-    
-    gap = 0.20 + 0.10 * difficulty               # Gaps between obstacles, never less than 20cm
-    
-    # Alternate "beam" (long/narrow) and "plank" (shorter/wider) along path:
-    elements = [("beam", beam_length, beam_width, beam_height),    # 1
-                ("plank", plank_length, plank_width, beam_height), # 2
-                ("beam", beam_length, beam_width, beam_height),    # 3
-                ("plank", plank_length, plank_width, beam_height), # 4
-                ("beam", beam_length, beam_width, beam_height),    # 5
-                ("plank", plank_length, plank_width, beam_height)] # 6
 
-    # Make the floor under beams/planks a pit, enforce flat start/end zones for goal approach
-    height_field[spawn_length:, :] = -pit_depth
-    height_field[:spawn_length, :] = 0
+    # Configuration
+    random.seed(42)  # Ensures reproducibility
+    np.random.seed(42)
 
-    cur_x = m_to_idx(2.05)      # Slight buffer after spawn
-    obs_count = 0
-    goal_idx = 0
+    mid_y = m_to_idx(width // 2)
+    spawn_length = m_to_idx(2)
+    course_length = m_to_idx(length)
+    course_width = m_to_idx(width)
 
-    def place_obstacle(x_center, y_center, ext_x, ext_y, height):
-        # ext_x, ext_y are half-length/half-width in meters, height is value to write
-        x_c = int(round(x_center))
-        y_c = int(round(y_center))
-        x1 = max(0, x_c - m_to_idx(ext_x))
-        x2 = min(height_field.shape[0], x_c + m_to_idx(ext_x))
-        y1 = max(0, y_c - m_to_idx(ext_y))
-        y2 = min(height_field.shape[1], y_c + m_to_idx(ext_y))
-        height_field[x1:x2, y1:y2] = height
+    # See-saw dimensions
+    num_seesaws = 6
+    seesaw_length = 1.8 - 0.5 * difficulty   # meters; gets shorter at higher difficulty
+    seesaw_length_idx = m_to_idx(seesaw_length)
+    seesaw_width = 1.05 - 0.25 * difficulty  # meters; gets narrower at higher difficulty, but still >0.8 at max
+    seesaw_width_idx = max(m_to_idx(seesaw_width), m_to_idx(0.8))
+    seesaw_height = 0.12 + 0.12 * difficulty # meters; beam stands higher for more tip and challenge
+    seesaw_angle_deg = 8 + 22 * difficulty   # Angle of tilt at rest, up to 30 degrees at max difficulty
+    seesaw_angle_rad = np.deg2rad(seesaw_angle_deg)
 
-    y_path = mid_y  # Start down the center
+    gap_length = 0.35 + 0.5 * difficulty     # meters between seesaws; forces robot to confidently step/stride
+    gap_length_idx = m_to_idx(gap_length)
 
-    while obs_count < len(elements):
-        shape, L, W, H = elements[obs_count]
+    # Width offset per seesaw
+    y_offsets = np.linspace(-0.7, 0.7, num_seesaws)
+    y_offsets = y_offsets * (1 - 0.5 * difficulty) # smaller offsets as difficulty increases
 
-        # Random lateral shift at hard difficulty
-        lateral_span = 0.7 * (1 - difficulty)  # Max deviate less at hard
-        if shape == "beam" and obs_count % 2 == 1:
-            y_shift = random.randint(-m_to_idx(lateral_span), m_to_idx(lateral_span))
-            # Turn the path by shifting y_path for planks, so path isn't always straight
-            y_path = np.clip(y_path + y_shift, m_to_idx(0.8), m_to_idx(width-0.8))
-        else:
-            y_shift = 0
+    # Keep spawn area flat
+    height_field[0:spawn_length, :] = 0
+    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]
 
-        # Lay down the obstacle centered at cur_x, y_path
-        place_obstacle(cur_x, y_path, L/2, W/2, H)
+    # Make under-beam a pit
+    height_field[spawn_length:, :] = -1.0  # Fill with pit
 
-        # Set a goal in the center (to line up entry/exit)
-        goals[goal_idx] = [cur_x, y_path]
-        goal_idx += 1
+    # Place the seesaw beams
+    cur_x = spawn_length
+    for i in range(num_seesaws):
+        x1 = int(cur_x)
+        x2 = int(np.clip(x1 + seesaw_length_idx, x1+1, course_length))
 
-        # If obstacle is a plank (not a straight-beam), place an extra goal at its end to make the robot turn on/off
-        if shape == "plank" and goal_idx < 8:
-            end_x = cur_x + (L/2 - 0.2)
-            goals[goal_idx] = [end_x, y_path]
-            goal_idx += 1
+        # Offset the seesaws a bit in y, but keep within bounds
+        beam_center_y = mid_y + m_to_idx(y_offsets[i])
+        y1 = int(np.clip(beam_center_y - seesaw_width_idx//2, 0, course_width-1))
+        y2 = int(np.clip(beam_center_y + seesaw_width_idx//2, y1+1, course_width))
 
-        # Advance to next obstacle: skip over beam/plank plus gap, slightly longer if difficult
-        skip_dist = L + gap + random.uniform(0, 0.1)
-        cur_x += m_to_idx(skip_dist)
-        obs_count += 1
+        # Simulate tilted seesaw: one end up, one down
+        slope = np.tan(seesaw_angle_rad) * field_resolution  # meters rise per grid cell
+        # left end lower, right end higher:
+        for j, x in enumerate(range(x1, x2)):
+            beam_height = -0.04 + (slope * j)
+            beam_height = np.clip(beam_height, -0.04, seesaw_height)
+            height_field[x, y1:y2] = beam_height
 
-        # Allow space for all obstacles & goals in 12m field
-        if cur_x > m_to_idx(length - 1.8):
-            break
+        # Put goal at seesaw midpoint
+        goal_x = x1 + seesaw_length_idx // 2
+        # Move the goal slightly forward at higher skill (makes robot slow down for beam end)
+        if difficulty > 0.7:
+            goal_x = x1 + int(0.7 * seesaw_length_idx)
+        goals[i+1] = [goal_x, int((y1 + y2) // 2)]
 
-    # The last goal: before the 12m wall, at the same y_path, on flat ground
-    flat_zone_len = m_to_idx(0.7)
-    end_x = height_field.shape[0] - flat_zone_len // 2
-    height_field[end_x:, :] = 0
-    if goal_idx < 8:
-        goals[goal_idx] = [end_x, y_path]
-        goal_idx += 1
+        # Move to next seesaw: gap after the current one
+        cur_x = x2 + gap_length_idx
 
-    # Make sure any remaining goals (if less than 8) are placed at the finish line (for API compliance)
-    for i in range(goal_idx, 8):
-        goals[i] = [end_x, y_path]
+    # Final solid ground area
+    if cur_x < course_length:
+        height_field[cur_x:, :] = 0
+    # Final goal
+    goals[7] = [min(course_length - m_to_idx(1), cur_x + m_to_idx(0.7)), mid_y]
 
     return height_field, goals

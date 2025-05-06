@@ -2,94 +2,75 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A series of staggered 'stepping stone' blocks (broad but slightly offset), above pits, for high-precision foot placement."""
-
+    """Series of urban-style curb jumps: robot must cross raised curbs ("speed bumps") of varying heights and step lengths, testing dynamic balance and stepping precision."""
+    
     def m_to_idx(m):
         """Converts meters to quantized indices."""
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
-
+    
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # --- Staggered wide "stepping stones" above a pit ---
-    # Platform (block) params
-    stone_length = 0.7 + 0.35 * (1-difficulty)    # longer at low difficulty, shorter at high
-    stone_length_idx = m_to_idx(stone_length)
-    stone_width = 1.0  # always at least 1 meter
-    stone_width_idx = m_to_idx(stone_width)
-    pit_depth = 0.5 + 0.6 * difficulty            # deep pit at higher difficulty
-    block_height = 0.10 + 0.25 * difficulty       # higher at larger difficulty
+    # Parameters for obstacles ("curbs" or "bumps")
+    curb_height_min = 0.06 + 0.10 * difficulty         # 6-16 cm tall
+    curb_height_max = 0.12 + 0.16 * difficulty         # 12-28 cm tall
+    curb_width_min = 1.1                               # at least quadruped width + margin
+    curb_width_max = 2.1
+    curb_length = 0.18 + 0.22 * difficulty             # from 18 to 40 cm "thick" speed-bump
+    curb_spacing_min = 0.8 + 1.1 * (1-difficulty)      # at harder diff, less space between obstacles
+    curb_spacing_max = 1.5 + 2.0 * (1-difficulty)
+    curb_overall_steps = 7                             # Number of obstacles
 
-    pit_start_x = m_to_idx(2)    # spawn area flat
+    mid_y = m_to_idx(width) // 2
+
+    def add_curb(x0, y_center, curb_len, curb_width, curb_height):
+        half_width = curb_width // 2
+        x1 = int(x0)
+        x2 = int(x0 + curb_len)
+        y1 = int(y_center - half_width)
+        y2 = int(y_center + half_width)
+        y1 = max(0, y1)
+        y2 = min(m_to_idx(width), y2)
+        x2 = min(m_to_idx(length), x2)
+        height_field[x1:x2, y1:y2] = curb_height
+
+    # Start: spawn on "ground"
     spawn_length = m_to_idx(2)
-    field_x, field_y = height_field.shape
+    height_field[0:spawn_length, :] = 0        # Flat ground for safe spawning
+    # First goal: just in front of first curb
+    goals[0] = [m_to_idx(1.0), mid_y]
 
-    # Set spawn area (flat)
-    height_field[:pit_start_x, :] = 0
+    # Position cursor for first curb after spawn zone
+    x_cur = spawn_length + m_to_idx(0.2)
+    curb_locs = []
+    
+    for i in range(curb_overall_steps):
+        # Random widths, lengths, heights within bounds for variety
+        curb_width = random.uniform(curb_width_min, curb_width_max)
+        curb_len = random.uniform(curb_length * 0.7, curb_length * 1.25)
+        curb_height = random.uniform(curb_height_min, curb_height_max)
+        # Place curb
+        add_curb(x_cur, mid_y, m_to_idx(curb_len), m_to_idx(curb_width), curb_height)
+        curb_locs.append((x_cur + m_to_idx(curb_len)//2, mid_y))
+        # Place goal on curb top midline, offset slightly to encourage straight direction 
+        goals[i+1] = [x_cur + m_to_idx(curb_len)//2, mid_y]
+        # Advance: set next curb spacing
+        space = random.uniform(curb_spacing_min, curb_spacing_max)
+        x_cur += m_to_idx(curb_len + space)
 
-    # Set pit region after spawn area (robot falls if misses a block)
-    height_field[pit_start_x:, :] = -pit_depth
+        # Avoid running over course boundary
+        if x_cur >= m_to_idx(length) - m_to_idx(2):
+            break  # Don't overrun the course
 
-    # Stagger blocks right and left;
-    stones = 6
-    min_stone_gap = 0.25 + 0.3 * difficulty  # meters; stones further apart as difficulty increases
-    max_stone_gap = 0.4 + 0.5 * difficulty
-    min_offset = 0.2
-    max_offset = 0.5 + 0.8 * difficulty      # y-offset is harder at higher diff
+    # Last goal: at course end, centerline, after all curbs
+    goals[7] = [min(m_to_idx(length)-m_to_idx(1.0), x_cur), mid_y]
 
-    center_y = m_to_idx(width / 2)
-    cur_x = pit_start_x
-
-    # First goal: at the first spawn area
-    goals[0] = [m_to_idx(1), center_y]
-
-    # Helper to add a block platform
-    def add_block(center_x, center_y, length_idx, width_idx, height):
-        x1 = int(center_x - length_idx // 2)
-        x2 = int(center_x + length_idx // 2)
-        y1 = int(center_y - width_idx // 2)
-        y2 = int(center_y + width_idx // 2)
-        # Clip indices within height_field
-        x1 = max(x1, 0); x2 = min(x2, field_x)
-        y1 = max(y1, 0); y2 = min(y2, field_y)
-        height_field[x1:x2, y1:y2] = height
-
-    last_stone_y = center_y
-    direction = 1  # start by offsetting right
-
-    for i in range(stones):
-        # X position: current
-        x = int(cur_x + stone_length_idx//2)
-        # Y offset: zigzag
-        y_offset = m_to_idx(random.uniform(min_offset, max_offset) * direction)
-        stone_center_y = np.clip(center_y + y_offset, m_to_idx(0.6), m_to_idx(width-0.6))
-        add_block(x, stone_center_y, stone_length_idx, stone_width_idx, block_height)
-        # Place a goal just over the center of the block
-        goals[i+1] = [x, stone_center_y]
-        last_stone_y = stone_center_y
-
-        # Prepare for next block
-        gap = m_to_idx(random.uniform(min_stone_gap, max_stone_gap))
-        cur_x += stone_length_idx + gap
-        direction *= -1  # alternate left and right
-
-        # Ensure block doesn't run out of field
-        if cur_x + stone_length_idx >= field_x-m_to_idx(1):
-            cur_x = field_x-m_to_idx(1.5*stone_length)  # pack last block in if too close to the end
-            break
-
-    # Last (8th) goal: a flat "exit pad" after the last stepping stone
-    exit_pad_x = int(min(cur_x + m_to_idx(0.7), field_x-1))
-    exit_pad_w = stone_width_idx
-    exit_pad_h = 0
-    y1 = int(last_stone_y - exit_pad_w//2)
-    y2 = int(last_stone_y + exit_pad_w//2)
-    # Fill the ground up after last stone
-    height_field[exit_pad_x:, y1:y2] = exit_pad_h
-    goals[7] = [exit_pad_x, last_stone_y]
-
-    # Fill any unused goals with the last valid goal
-    for i in range(stones+2, 8):
-        goals[i] = goals[7]
+    # Final flat ground patch at end for recovery (ensure no obstacle at very end)
+    end_start = int(min(x_cur, m_to_idx(length) - m_to_idx(1.0)))
+    height_field[end_start:, :] = 0
+    
+    # Ensure all goals in-bounds (replace missing goals with in-place copies of last valid goal)
+    for j in range(len(curb_locs)+1, 8):
+        goals[j] = goals[j-1]
 
     return height_field, goals

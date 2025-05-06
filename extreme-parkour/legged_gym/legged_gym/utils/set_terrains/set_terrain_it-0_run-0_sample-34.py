@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Stepping stone sequence: robot must precisely step over a series of narrow, offset stone blocks above a deep pit, testing lateral agility and careful foot placement."""
+    """Stepping-stone 'urban blocks' course: jumping/walking atop sequential narrow rectangular blocks, testing balance and narrow foothold navigation."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,67 +11,83 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Main parameters for the stepping stone course
-    # Each "stone" is a rectangular raised platform, 0.5-0.7m long, 0.45-0.6m wide; spaced by 0.3-0.7m; alternates left and right
-    stone_length = 0.5 + 0.2 * difficulty
-    stone_width = 0.45 + 0.15 * (1-difficulty)  # More difficult = narrower
-    stone_height = 0.1 + 0.25 * difficulty      # Harder= higher
-    gap = 0.35 + 0.4 * difficulty               # Spacing between stones
-    lateral_offset = 0.30 + 0.20 * difficulty   # How far off the center each is
+    # --- Parameters ---
+    # Block and gap sizes
+    block_width = 0.5 + 0.2 * (1 - difficulty)    # 0.7m at easy, 0.5m at hard
+    block_length = 1.2 - 0.3 * difficulty         # 1.2m at easy, 0.9m at hard (always > robot length)
+    gap_min = 0.15 + 0.20 * difficulty            # minimum 0.15m gap at easy, up to 0.35m+ at hard
+    gap_max = gap_min + 0.2 * difficulty          # more variability with difficulty
 
-    n_stones = 8  # One for each goal
-    start_x = 2.0  # meters: start placing stones after robot spawn area
-    course_length = (n_stones * stone_length) + ((n_stones-1) * gap)
-    usable_length = length - start_x * 1.2      # leave a bit of exit space
+    block_height = 0.15 + 0.23 * difficulty       # Easy: 0.15m, Hard: 0.38m (max ~robot's knee)
+    pit_depth = 0.60 + 0.4 * difficulty           # Deep pits
 
-    assert course_length <= usable_length, "Stepping stones do not fit in the field, adjust sizes!"
+    # Convert to indices
+    block_width_i = m_to_idx(block_width)
+    block_length_i = m_to_idx(block_length)
+    gap_min_i, gap_max_i = m_to_idx(gap_min), m_to_idx(gap_max)
+    block_height = float(block_height)
+    pit_height = -float(pit_depth)
 
-    # Pit parameters: everything outside a stone is -0.8m
-    pit_height = -0.8
+    margin_y = m_to_idx(0.5)   # keep all blocks away from edge of field
 
-    # Fill post-spawn area with pit, then overwrite stepping stones as raised
-    spawn_x_idx = m_to_idx(start_x)
-    height_field[spawn_x_idx:, :] = pit_height
-
-    # Place each stepping stone and corresponding goal
-    # Stones alternate left/right of center line
+    # --- Place initial flat ground for spawn area ---
+    spawn_length = m_to_idx(2)
+    height_field[:spawn_length, :] = 0
     mid_y = m_to_idx(width / 2)
-    stone_l = m_to_idx(stone_length)
-    stone_w = m_to_idx(stone_width)
-    gap_l = m_to_idx(gap)
-    lateral_off_idx = m_to_idx(lateral_offset)
-    between_stones_clearance = 0.18  # [m], buffer edge-to-edge so even at minimum width robot has margin
 
-    cur_x = spawn_x_idx
-    for i in range(n_stones):
-        # Alternate left/right, bias is for i=0 -> center
-        if i % 2 == 0:
-            y_c = mid_y - lateral_off_idx
-        else:
-            y_c = mid_y + lateral_off_idx
-        y1 = max(0, y_c - stone_w // 2)
-        y2 = min(height_field.shape[1], y_c + (stone_w + 1) // 2)
+    # --- Construction loop ---
+    cur_x = spawn_length
+    # Stride pattern: most blocks straight, sometimes slight left/right offset
+    y_positions = [mid_y]
+    n_blocks = 7
+
+    # First goal is in spawn region
+    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]
+
+    for i in range(n_blocks):
+        # Slight y offset: occasionally make the robot shift left/right, but not edge to edge
+        if i > 0:
+            if random.random() < 0.45:
+                dy = m_to_idx(random.choice([-0.5, 0.5]))
+                new_y = min(max(y_positions[-1] + dy,
+                                margin_y + block_width_i//2),
+                            m_to_idx(width) - margin_y - block_width_i//2)
+                y_positions.append(int(new_y))
+            else:
+                y_positions.append(y_positions[-1])
+
+        y_c = y_positions[i]
         x1 = cur_x
-        x2 = min(height_field.shape[0], cur_x + stone_l)
-        height_field[x1:x2, y1:y2] = stone_height  # Place stone
+        x2 = min(x1 + block_length_i, m_to_idx(length) - 1)
 
-        # Goal: center of stone
-        goals[i] = [x1 + (stone_l // 2), y_c]
+        # Carve a pit around the block first
+        pit_margin = m_to_idx(0.05)
+        pit_x1 = max(x1 - pit_margin, spawn_length)
+        pit_x2 = min(x2 + pit_margin, m_to_idx(length) - 1)
+        pit_y1 = max(y_c - block_width_i//2 - pit_margin, 0)
+        pit_y2 = min(y_c + block_width_i//2 + pit_margin, m_to_idx(width) - 1)
+        height_field[pit_x1:pit_x2, pit_y1:pit_y2] = pit_height
 
-        # Step cur_x to next stone
-        cur_x = x2 + gap_l
+        # Add the block
+        b_y1 = int(y_c - block_width_i // 2)
+        b_y2 = int(y_c + (block_width_i + 1) // 2)
+        height_field[x1:x2, b_y1:b_y2] = block_height
 
-    # Flat safe exit after last stone
-    exit_x1 = cur_x
-    exit_x2 = min(m_to_idx(length), cur_x + m_to_idx(1.0))
-    height_field[exit_x1:exit_x2, :] = 0.0
+        # Place a goal approximately at the center of this block
+        goals[i+1] = [int((x1 + x2) // 2), int((b_y1 + b_y2) // 2)]
 
-    # Set the first goal (spawn area) to center just *before* first stone for initial acquisition
-    goals[0] = [m_to_idx(1.5), mid_y]
+        # Next block: advance x by block + random gap
+        gap = random.randint(gap_min_i, gap_max_i)
+        cur_x += block_length_i + gap
 
-    # Ensure 8 valid goal positions, always in-bounds
-    for i in range(8):
-        goals[i, 0] = np.clip(goals[i, 0], 0, height_field.shape[0]-1)
-        goals[i, 1] = np.clip(goals[i, 1], 0, height_field.shape[1]-1)
+        # Avoid placing blocks beyond the field
+        if cur_x + block_length_i >= m_to_idx(length) - 1:
+            break
+
+    # Final goal: flat finishing area at exit
+    fin_margin = m_to_idx(1)
+    finish_x1 = min(cur_x, m_to_idx(length) - fin_margin)
+    height_field[finish_x1:, :] = 0
+    goals[7] = [min(finish_x1 + m_to_idx(0.5), m_to_idx(length) - 1), mid_y]
 
     return height_field, goals

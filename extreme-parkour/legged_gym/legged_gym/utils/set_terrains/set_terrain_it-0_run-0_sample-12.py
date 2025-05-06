@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A sequence of balance beams of variable width, length, and side shift, requiring crossing precision and lateral stepping."""
+    """A sequence of raised, narrow, turning beams over a deep pit to test precise foot placement and balance."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,72 +11,85 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Parameters for beams
-    min_beam_width = 0.40  # meter (narrow but passable)
-    max_beam_width = 1.0   # meter
-    min_beam_length = 1.2
-    max_beam_length = 2.0
+    # Robot parameters
+    robot_length, robot_width = 0.645, 0.28
 
-    min_gap = 0.20     # in meters; robot will need to step across, not a jump.
-    max_gap = 0.55 + 0.45 * difficulty  # at hardest, close to max step reach
+    # Beam parameters scaling with difficulty
+    min_beam_width = max(0.45, robot_width + 0.15 - 0.1 * difficulty)
+    max_beam_width = max(0.7, robot_width + 0.6 - 0.3 * difficulty)
+    beam_length = 1.7 - 0.7 * difficulty  # beams shorter as difficulty increases
+    min_beam_height = 0.18 + 0.21 * difficulty
+    max_beam_height = 0.4 + 0.22 * difficulty
 
-    beam_height = 0.12 + 0.08 * difficulty  # raise beam with difficulty
+    beam_overlap = 0.16 - 0.09 * difficulty  # beams overlap slightly for easier transitions
+    beam_pitch_angle = np.deg2rad(25 + 50 * difficulty)  # max angular offset between beams
 
-    n_beams = 6
-    mid_y = m_to_idx(width / 2)
-    cur_x = m_to_idx(2) # start after spawning zone
+    n_beams = 7  # 7 beams, 8 goals including spawn and end
+    mid_y = m_to_idx(width) // 2
 
-    # Start with a checkerboard pit for penalizing falls
-    height_field[mid_x_start := cur_x:, :] = -1.2  # pit everywhere except on beams
-
-    def add_beam(start_x, end_x, center_y, beam_width, h):
-        """Places a beam of given width and height onto the terrain."""
-        half_w = m_to_idx(beam_width / 2)
-        x1, x2 = int(start_x), int(end_x)
-        y1 = int(max(0, center_y - half_w))
-        y2 = int(min(m_to_idx(width), center_y + half_w))
-        height_field[x1:x2, y1:y2] = h
-
-    # Spawn platform (flat region before first beam)
+    spawn_x = m_to_idx(1)
+    spawn_y = mid_y
     spawn_length = m_to_idx(2)
-    height_field[0:spawn_length, :] = 0  # safe landing area for spawn
 
-    # Place first goal at spawn
-    goals[0] = [spawn_length-m_to_idx(0.5), mid_y]
+    # Set flat ground at spawn
+    height_field[:spawn_length, :] = 0
 
-    # Arrange beams with varying width, length, and y-position
-    y_center = mid_y
+    # Set the pit in the rest of terrain (deepest at higher difficulty)
+    pit_depth = -1.0 - 1.5 * difficulty
+    height_field[spawn_length:, :] = pit_depth
+
+    # First goal: spawn
+    goals[0] = [spawn_x, spawn_y]
+
+    # Beam placement
+    x, y = m_to_idx(2.4), mid_y
+    current_angle = 0
+    np.random.seed(42)  # deterministic for debugging
+
     for i in range(n_beams):
-        beam_length = np.random.uniform(min_beam_length, max_beam_length)
-        beam_width = np.random.uniform(
-            min_beam_width, 
-            min_beam_width + (max_beam_width - min_beam_width) * (1 - difficulty)
-        )  # narrower at higher difficulty
+        # Beam geometry
+        this_beam_width = m_to_idx(np.random.uniform(min_beam_width, max_beam_width))
+        this_beam_length = m_to_idx(beam_length + np.random.uniform(-0.13, 0.13))
+        this_beam_height = np.random.uniform(min_beam_height, max_beam_height)
+        # Angle change, to make a beam "turn"
+        if i > 0:
+            turn = np.random.choice([-1, 1]) * np.random.uniform(0.2, beam_pitch_angle if i < n_beams-1 else 0.14)
+        else:
+            turn = 0
+        current_angle += turn
 
-        beam_length_idx = m_to_idx(beam_length)
-        beam_width_idx = beam_width  # still meters, for helper
-        beam_gap = np.random.uniform(min_gap, max_gap)
-        beam_gap_idx = m_to_idx(beam_gap)
+        dx = int(np.cos(current_angle) * this_beam_length)
+        dy = int(np.sin(current_angle) * this_beam_length)
+        cx, cy = x, y
 
-        # Lateral offset for each beam, so the robot must steer left and right
-        max_shift = 1.3 * (difficulty)
-        y_shift = np.random.uniform(-max_shift, max_shift)
-        y_center = int(np.clip(y_center + m_to_idx(y_shift), m_to_idx(beam_width/2), m_to_idx(width - beam_width/2) - 1))
+        # Draw the beam by filling rectangles along orientation (simple approach)
+        for t in range(this_beam_length):
+            bx = int(cx + np.cos(current_angle) * t)
+            by = int(cy + np.sin(current_angle) * t)
+            wx1, wx2 = bx - this_beam_width//2, bx + this_beam_width//2
+            wy1, wy2 = by - this_beam_width//2, by + this_beam_width//2
+            # Bounds-check
+            if 0 <= wx1 < height_field.shape[0] and 0 <= wx2 < height_field.shape[0] and \
+               0 <= wy1 < height_field.shape[1] and 0 <= wy2 < height_field.shape[1]:
+                height_field[wx1:wx2, wy1:wy2] = this_beam_height
 
-        add_beam(cur_x, cur_x + beam_length_idx, y_center, beam_width, beam_height)
+        # Set goal in the middle of this beam
+        beam_goal_x = int(cx + np.cos(current_angle) * (this_beam_length // 2))
+        beam_goal_y = int(cy + np.sin(current_angle) * (this_beam_length // 2))
+        if i < goals.shape[0]-1:
+            goals[i+1] = [beam_goal_x, beam_goal_y]
 
-        # Place a goal in the middle of the current beam
-        goals[i+1] = [cur_x + beam_length_idx // 2, y_center]
-        # Advance x by beam_length + gap
-        cur_x += beam_length_idx + beam_gap_idx
+        # Advance tip for next beam (add some overlap so the robot can step across)
+        x = int(cx + np.cos(current_angle) * (this_beam_length - m_to_idx(beam_overlap)))
+        y = int(cy + np.sin(current_angle) * (this_beam_length - m_to_idx(beam_overlap)))
 
-    # Final landing platform (flat ground)
-    final_platform_len = m_to_idx(1.2)
-    height_field[cur_x:cur_x+final_platform_len, :] = 0
+    # Last goal at flat area at far end
+    final_flat_x = m_to_idx(length) - m_to_idx(1)
+    final_flat_y = mid_y
+    height_field[final_flat_x:, :] = 0.0
+    goals[-1] = [final_flat_x, final_flat_y]
 
-    # Last goal near the end of the course
-    if len(goals) < 8 or goals.shape[0] < 8:
-        raise RuntimeError("goals must be of length 8")
-    goals[7] = [cur_x + final_platform_len//2, mid_y]
+    # (Optional) Clamp height_field so no values exceed spawn or sink further
+    height_field = np.clip(height_field, pit_depth, np.max(height_field))
 
     return height_field, goals

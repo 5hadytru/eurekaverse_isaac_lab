@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A sequence of balanced beams of varying width, alternating with open ground, to test the quadruped's precise foot placement and balance."""
+    """A sequence of dog park-style hurdles: adjustable spaced jump bars of varying heights, requiring the quadruped to run, jump, and land repeatedly."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,67 +11,73 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Course parameters
-    beam_count = 5
-    beam_length_m = 1.6 - 0.3 * difficulty
-    beam_length = m_to_idx(beam_length_m)
-    min_beam_width = 0.35
-    max_beam_width = 0.6 - 0.25 * difficulty  # gets narrower at high difficulty, but always > 0.1
-    space_between_beams = 0.5 + 0.4 * difficulty  # Make gaps a bit longer with difficulty
-    space_between_beams = m_to_idx(space_between_beams)
-    beam_height = 0.14 + 0.10 * difficulty      # simulate a raised beam (up to ~0.24m high)
+    # Parameters for hurdle sizing
+    hurdle_width = 1.4  # ensures at least 1m wide
+    hurdle_thickness = 0.08  # ~8cm thick bar
+    # Hurdle height increases with difficulty (range: 0.10–0.35m)
+    min_hurdle_height = 0.10 + 0.10 * difficulty
+    max_hurdle_height = 0.16 + 0.19 * difficulty
 
-    mid_y = m_to_idx(width / 2)
+    # Horizontal space between hurdles (meters)
+    base_gap = 1.1 + 1.8 * (1-difficulty)  # closer for hard, further for easy
+    hurdle_count = 6  # leave room for 2 plain goals
 
-    # Leave spawn area untouched (flat ground at 0m height, width-full)
-    spawn_length = m_to_idx(2)
-    height_field[:spawn_length, :] = 0.0
-    goals[0] = [m_to_idx(1.0), mid_y]          # First goal is shortly after spawn
+    spawn_x = m_to_idx(1.0)
+    course_start = m_to_idx(2.0)  # No obstacles within first 2m
 
-    # For challenge, alternate beams slightly left and right
-    lateral_offsets = np.linspace(-0.65, 0.65, beam_count)
-    lateral_offsets = field_resolution * np.round(lateral_offsets / field_resolution)
-    beam_locs = []
-    cur_x = spawn_length
+    course_end = m_to_idx(length-0.5)
+    mid_y = m_to_idx(width/2)
+    hurdle_width_idx = m_to_idx(hurdle_width)
+    hurdle_half_width_idx = hurdle_width_idx // 2
+    hurdle_thickness_idx = max(1, m_to_idx(hurdle_thickness))  # ensure at least 1 idx
 
-    for i in range(beam_count):
-        # Beam width can reduce with difficulty, but always above minimum
-        beam_width = np.clip(max_beam_width - 0.08*i*difficulty, min_beam_width, max_beam_width)
-        half_width = m_to_idx(beam_width / 2)
+    # Floor is flat except for the hurdles (bars)
+    height_field[:,:] = 0
 
-        # Place beam centered, but alternate offset left/right from center
-        offset = lateral_offsets[i % len(lateral_offsets)]
-        y_center = mid_y + m_to_idx(offset)
+    # Place first goal at spawn
+    goals[0] = [spawn_x, mid_y]
 
-        x_start = cur_x
-        x_end = min(cur_x + beam_length, m_to_idx(length) - 1)
-        y1 = max(y_center - half_width, 0)
-        y2 = min(y_center + half_width, m_to_idx(width))
+    # Hurdle placement
+    hurdle_positions_x = []
+    gap = base_gap - 0.7 * difficulty  # Pack tighter on higher difficulty
 
-        # Make "open ground" (gap between beams) stay at 0m (walkable), so the robot must keep to the beam for efficient progress, but can step down with penalty if falls.
-        # Optionally for high difficulty, make the ground in the gaps negative (e.g. -0.2), but always leave the last region flat so we don't trap the robot.
+    # Calculate start positions for hurdles so that they fit nicely in terrain
+    total_gap = gap * (hurdle_count)
+    hurdle_start_x = course_start + m_to_idx(0.5)  # Offset half a meter past spawn area
+    last_x = hurdle_start_x
 
-        # Raise the beam
-        height_field[x_start:x_end, y1:y2] = beam_height
+    for i in range(hurdle_count):
+        # Bar y-centers with some minor lateral offset for realism
+        y_shift = m_to_idx(random.uniform(-0.15, 0.15) * (1-difficulty))  # Less randomness at higher difficulty
+        x = int(last_x)
+        y_c = mid_y + y_shift
 
-        # Add beam record and goal
-        beam_locs.append((x_start, x_end, y_center))
-        goal_x = (x_start + x_end) // 2
-        goals[i+1] = [goal_x, y_center]
-        
-        # Add gap after beam (open ground)
-        gap_start = x_end
-        gap_end = min(gap_start + space_between_beams, m_to_idx(length) - 1)
-        if i < beam_count - 1:
-            if difficulty > 0.5:
-                # At high difficulty, make the ground negative in the gaps for extra penalty (not a true pit, soft penalty).
-                height_field[gap_start:gap_end, :] = -0.22 * difficulty
-        cur_x = gap_end
+        # Bar length (width) with margin to boundaries
+        y1 = max(0, y_c-hurdle_half_width_idx)
+        y2 = min(m_to_idx(width), y_c+hurdle_half_width_idx)
 
-    # Final "safe zone": flat ground till the end, for robot to stop
-    height_field[cur_x:, :] = 0
-    # Place the final goal just before course end, in the middle
-    goals[6] = [min(cur_x + m_to_idx(0.4), m_to_idx(length) - 2), mid_y]
-    goals[7] = [m_to_idx(length) - m_to_idx(0.5), mid_y]
+        # Random height between min and max
+        height = random.uniform(min_hurdle_height, max_hurdle_height)
+
+        # "Bar" shape (bar at a fixed x, with finite thickness in the x axis—else it would be infinitely thin)
+        # Increase bar thickness at lower difficulty
+        thickness_this = hurdle_thickness_idx + int((1-difficulty)*2)
+        height_field[x:x+thickness_this, y1:y2] = height
+
+        # Save hurdle center position for goal (centered in hurdle x, left-right middle)
+        hurdle_positions_x.append(x + thickness_this//2)
+        last_x = x + m_to_idx(gap + 0.45 * random.uniform(-1, 1) * (1-difficulty))  # add more randomness for easy courses
+
+    # Fill goals: first at spawn, then right before each hurdle, then after last hurdle, and finish.
+    # We want the robot to approach each hurdle straight, so place the goals at clear spots.
+    for i in range(hurdle_count):
+        # A goal just before each hurdle
+        xg = hurdle_positions_x[i] - m_to_idx(0.25)
+        xg = max(course_start, xg)  # stay in bounds
+        goals[i+1] = [xg, mid_y]
+
+    # After last hurdle, add goal on the "landing pad"
+    last_landing_x = min(hurdle_positions_x[-1] + m_to_idx(0.6), course_end)
+    goals[-1] = [last_landing_x, mid_y]
 
     return height_field, goals

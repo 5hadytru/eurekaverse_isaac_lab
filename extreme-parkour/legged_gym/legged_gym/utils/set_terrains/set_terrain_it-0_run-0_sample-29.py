@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Alternating low steps and low balance beams: tests precise foot placement and stable walking across narrow paths."""
+    """A sequence of balance beams and narrow walkways for testing precise foot-placement and balance."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,69 +11,97 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Parameters based on quadruped size and environment specs
-    # All beams and steps have width >= 1m unless otherwise specified as balance beam (narrow, but > 0.4m)
-    step_length = 0.8 + 0.3 * difficulty     # step (ledge) the quadruped must climb onto
-    step_width = 1.4                        # wide enough for robust stepping
-    step_height_min, step_height_max = 0.09, 0.23
-    step_height = step_height_min + (step_height_max - step_height_min) * difficulty
-
-    beam_length = 1.7 + 0.3 * difficulty     # long balance beam walk
-    beam_width = 0.42 + 0.11 * (1-difficulty)  # balance beam: between 0.42m and 0.53m
-    beam_height_min, beam_height_max = 0.12, 0.25
-    beam_height = beam_height_min + (beam_height_max - beam_height_min) * difficulty
-
-    pit_depth = -0.9 - 0.2 * difficulty      # deep enough to prevent stepping down, forces using obstacles
-    spawn_length = m_to_idx(2)
+    # Parameters
     mid_y = m_to_idx(width) // 2
+    spawn_length_idx = m_to_idx(2)
+    length_idx = m_to_idx(length)
+    width_idx = m_to_idx(width)
 
-    # Ensure narrow terrain features still "fit" the robot (minimum width for beams = 0.42m)
-    def add_step(x_start, x_end, y_center, height):
-        y1 = y_center - m_to_idx(step_width) // 2
-        y2 = y_center + m_to_idx(step_width) // 2
-        height_field[x_start:x_end, y1:y2] = height
+    # 1. Flat spawn area
+    height_field[:spawn_length_idx, :] = 0
+    goals[0] = [m_to_idx(1.0), mid_y]  # First goal in spawn flat ground
 
-    def add_beam(x_start, x_end, y_center, height):
-        y1 = y_center - m_to_idx(beam_width) // 2
-        y2 = y_center + m_to_idx(beam_width) // 2
-        height_field[x_start:x_end, y1:y2] = height
+    # 2. Balance beam section (robot must traverse a narrow raised walkway)
+    beam_length = 1.7 + difficulty * 2.1      # (1.7m to 3.8m)
+    beam_width = 0.25 + 0.15 * (1-difficulty) # (0.4m at easy, 0.25m at hard)
+    beam_height = 0.12 + 0.12 * difficulty    # (0.12m to 0.24m)
+    beam_gap = 0.22 + 0.45 * difficulty       # (0.22m to 0.67m)
+    # Stagger/yaw beam slightly for higher difficulty
+    beam_angle = (0.0 if difficulty < 0.3 
+                  else np.random.uniform(-0.12, 0.12) * difficulty)
 
-    # Fill spawn area with flat ground at height 0
-    height_field[:spawn_length, :] = 0
-    # Place first goal in the center of starting platform
-    goals[0] = [m_to_idx(1), mid_y]
+    cur_x = spawn_length_idx
+    for sec in range(3):  # 3 balance beams, separated by gaps
+        bl = m_to_idx(beam_length)
+        bw = m_to_idx(beam_width)
+        bh = beam_height
+        gap = m_to_idx(beam_gap)
 
-    cur_x = spawn_length
-    step_size = m_to_idx(step_length)
-    beam_size = m_to_idx(beam_length)
-    # For each obstacle segment, alternate step and beam, for a total of 3 each, with safe ground at the end
-    for i in range(3):
-        # Step (ledge) 
-        add_step(cur_x, cur_x + step_size, mid_y, step_height)
-        goals[2 * i + 1] = [(cur_x + cur_x + step_size) // 2, mid_y]
+        # Beam center (add a small random offset to test recovery)
+        center_y = mid_y + int(np.random.uniform(-2, 2) * difficulty)
+        # Angle/yaw: walk diagonally for skill
+        for b in range(bl):
+            # Calculate offset if there is a yaw angle
+            y_offset = int(b * np.tan(beam_angle))
+            y1 = center_y - bw // 2 + y_offset
+            y2 = center_y + bw // 2 + y_offset
+            # Safety: stay within bounds (no overlap with wall)
+            y1 = max(0, y1)
+            y2 = min(width_idx, y2)
+            height_field[cur_x+b, y1:y2] = bh
 
-        cur_x += step_size
-        gap = m_to_idx(0.25 + 0.2 * difficulty)
-        cur_x += gap  # Pit between step and beam
-        height_field[cur_x - gap:cur_x, :] = pit_depth
+        # Goal at center of beam
+        goals[sec+1] = [cur_x + bl // 2, center_y]
+        cur_x += bl
 
-        # Balance beam
-        side_offset = 0
-        # Optional: vary beam center left-right for more variety as difficulty increases
-        if difficulty > 0.35:
-            side_offset = int(m_to_idx((random.random() - 0.5) * 0.5 * difficulty)) # up to 0.25m side offset
-        add_beam(cur_x, cur_x + beam_size, mid_y + side_offset, beam_height)
-        goals[2 * i + 2] = [(cur_x + cur_x + beam_size) // 2, mid_y + side_offset]
+        # Add a pit/gap after beam
+        if cur_x + gap < length_idx:
+            height_field[cur_x:cur_x+gap, :] = -0.8   # pit is down 0.8m
 
-        cur_x += beam_size
-        gap = m_to_idx(0.21 + 0.13 * difficulty)
-        cur_x += gap  # Pit between beam and next step
-        height_field[cur_x - gap:cur_x, :] = pit_depth
+        cur_x += gap
+        # Slightly change beam parameters for next one
+        beam_length += 0.2 * (-1)**(sec) * difficulty
+        beam_width = max(0.22, beam_width - 0.04 * difficulty)  # Keep safe range
 
-    # Final platform goal: broad, safe exit area
-    exit_start = cur_x
-    exit_end = m_to_idx(length)
-    height_field[exit_start:exit_end, :] = 0
-    goals[7] = [exit_start + (exit_end - exit_start) // 2, mid_y]
+    # 3. Wide stepping stone - to test transition from narrow to wide surface
+    stone_length = m_to_idx(0.95 + 1.1 * difficulty)   # 0.95-2.05m
+    stone_width = m_to_idx(1.0 + 0.5 * difficulty)     # 1-1.5m
+    stone_height = 0.12 + 0.13 * difficulty
+    stone_y = mid_y - stone_width // 2
+    height_field[cur_x:cur_x+stone_length, stone_y:stone_y+stone_width] = stone_height
+    goals[4] = [cur_x + stone_length//2, mid_y]
+    cur_x += stone_length
+
+    # 4. Slalom narrow walkway (zigzag beams)
+    slalom_count = 2 + int(difficulty * 2)
+    walkway_length = m_to_idx(0.63 + 0.37 * difficulty) # 0.63 to 1.0 meters per segment
+    walkway_width = m_to_idx(0.28 + 0.06 * (1-difficulty)) # 0.28-0.34 meters
+    walkway_height = 0.14 + 0.06 * difficulty
+    slalom_offset_max = m_to_idx(1.10 * difficulty)     # how much left/right
+
+    # Place alternating slalom beams
+    for s in range(slalom_count):
+        delta_y = ((-1)**s) * int(slalom_offset_max * np.random.uniform(0.8, 1.0))
+        center_y = mid_y + delta_y
+        y1 = max(0, center_y - walkway_width//2)
+        y2 = min(width_idx, center_y + walkway_width//2)
+        lx = min(walkway_length, length_idx - cur_x)
+        height_field[cur_x:cur_x+lx, y1:y2] = walkway_height
+        goals[5+s] = [cur_x + lx//2, center_y]
+        cur_x += lx
+
+        # Intersperse small gaps for difficulty
+        if cur_x + m_to_idx(0.2) < length_idx:
+            height_field[cur_x:cur_x+m_to_idx(0.2), :] = -0.6
+            cur_x += m_to_idx(0.2)
+
+    # 5. Final platform to land (for finish)
+    platform_length = m_to_idx(1.0)
+    height_field[cur_x:cur_x+platform_length, :] = 0.0
+    # Last goal
+    goals[7] = [min(cur_x + platform_length//2, length_idx-1), mid_y]
+
+    # Clip all goals to be within field bounds
+    goals = np.clip(goals, [0,0], [length_idx-1, width_idx-1])
 
     return height_field, goals

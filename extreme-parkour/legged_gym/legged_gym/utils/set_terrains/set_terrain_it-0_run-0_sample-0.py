@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Alternating ramps and low rails for testing balance and grip under angled ground contact."""
+    """A sequence of angled ramps for quadruped stair/ramp ascent and descent skill."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,77 +11,80 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Ramps/rail parameters
-    # Ramps: angled surfaces requiring step or bound up/down (increase steepness with difficulty)
-    max_angle_deg = 25 + 20 * difficulty  # up to 45deg at hardest
-    max_angle_rad = np.deg2rad(max_angle_deg)
-    ramp_height = np.tan(max_angle_rad) * 1.5     # ramp runs 1.5m in length
-    ramp_length = 1.5
-    ramp_width = 1.4 + 0.7 * (1-difficulty)       # slightly wider at easy settings
-
-    # Rails: raised narrow low-profile beams, force careful foot placement for balance
-    rail_width = 0.3 + 0.2 * (1-difficulty)       # easier: up to 0.5m wide, hard: 0.3m
-    rail_height = 0.12 + 0.10 * difficulty
-    rail_length = 1.1
-    rail_gap = 0.28 + 0.24 * difficulty           # pit to punish LOSING balance
-    
+    # Parameters for ramps
+    # Ramp configuration scales with difficulty to increase the steepness and height
+    num_ramps = 4
+    # Ramp length: 1.8m ~ 1.0m as difficulty increases
+    ramp_length = np.linspace(1.8, 1.0, num=num_ramps) * (1 - 0.5 * difficulty)
+    # Ramp width: always wide, but shift slightly side-to-side
+    ramp_width = 1.2
+    min_side_margin = 0.4
     mid_y = m_to_idx(width / 2)
+    ramp_width_idx = m_to_idx(ramp_width // 2)
+    ramp_spacing = 0.3 + 1.0 * difficulty  # flat in-between ramps
 
-    # Spawn zone: keep flat
-    spawn_x = m_to_idx(2)
-    height_field[:spawn_x, :] = 0
-    goals[0] = [m_to_idx(1), mid_y]
+    # Ramp ascent/descent height increases with difficulty
+    ramp_height = 0.12 + 0.23 * difficulty
+    flat_section_length = 0.7 - 0.2 * difficulty
+    flat_section_length = max(flat_section_length, 0.25)
 
-    # Starting positions for obstacles
-    cur_x = spawn_x
+    # Ensure start flat area for spawn
+    spawn_length = m_to_idx(2)
+    height_field[0:spawn_length, :] = 0
+    goals[0] = [m_to_idx(1.0), mid_y]
 
-    for i in range(1, 7, 2):  # We will place 3 ramp-rail pairs, mapping to 6 goals plus spawn and exit
-        ########################
-        # Add a ramp
-        ########################
-        ramp_x1 = cur_x
-        ramp_x2 = ramp_x1 + m_to_idx(ramp_length)
+    cur_x = spawn_length
+    ramp_directions = [1, -1] * (num_ramps // 2)  # Alternate up and down
+    y_shift_options = [-0.2, 0.0, 0.2]
 
-        # Ramp vertical displacement can be up (if even) and then down (if odd), to test both ascent and descent
-        if (i//2) % 2 == 0:
-            ramp_dir = 1  # up
-        else:
-            ramp_dir = -1 # down
+    for i in range(num_ramps):
+        # Ramp placement
+        r_len = m_to_idx(ramp_length[i])
+        f_len = m_to_idx(flat_section_length)
+        y_shift = m_to_idx(random.choice(y_shift_options))
+        y_mid = int(np.clip(mid_y + y_shift, m_to_idx(min_side_margin), m_to_idx(width) - m_to_idx(min_side_margin)))
 
-        # Linear slope along ramp axis
-        ramp_y1 = mid_y - m_to_idx(ramp_width/2)
-        ramp_y2 = mid_y + m_to_idx(ramp_width/2)
-        for rx in range(ramp_x1, ramp_x2):
-            rel = (rx - ramp_x1) / max(1, ramp_x2 - ramp_x1-1)
-            height_field[rx, ramp_y1:ramp_y2] = ramp_dir * ramp_height * rel + height_field[ramp_x1, ramp_y1]
+        # Ramp indices
+        x1 = cur_x
+        x2 = x1 + r_len
+        y1 = y_mid - ramp_width_idx
+        y2 = y_mid + ramp_width_idx
+        y1 = max(y1, 0)
+        y2 = min(y2, m_to_idx(width))
 
-        # Goals at top of each ramp
-        goals[i] = [ (ramp_x1 + ramp_x2)//2, mid_y ]
+        # Ramp direction: up or down
+        dir = ramp_directions[i]
+        start_h = np.max(height_field[x1-1, y1:y2]) if x1 > 0 else 0.0
+        end_h = start_h + ramp_height * dir
 
-        cur_x = ramp_x2
+        # Create ramp: linear slope along x
+        for x in range(x1, x2):
+            t = (x - x1) / max(1, r_len - 1)
+            height_field[x, y1:y2] = (1-t)*start_h + t*end_h
 
-        ########################
-        # Add a rail
-        ########################
-        rail_x1 = cur_x
-        rail_x2 = rail_x1 + m_to_idx(rail_length)
-        rail_y1 = mid_y - m_to_idx(rail_width/2)
-        rail_y2 = mid_y + m_to_idx(rail_width/2)
-        # Rail is a raised beam with a pit on either side
-        height_field[rail_x1:rail_x2, :] = -rail_gap  # fill with pit (negative height)
-        height_field[rail_x1:rail_x2, rail_y1:rail_y2] = height_field[ramp_x2-1, rail_y1] + rail_height
+        # Flat section at top/bottom
+        x_flat1 = x2
+        x_flat2 = x_flat1 + f_len
+        height_field[x_flat1:x_flat2, y1:y2] = end_h
 
-        # Place goal at center of rail
-        goals[i+1] = [ (rail_x1 + rail_x2)//2, mid_y ]
+        # Place goal at middle of each flat section
+        goal_x = int(x_flat1 + (x_flat2 - x_flat1)//2)
+        if i+1 < 8:
+            goals[i+1] = [goal_x, y_mid]
 
-        cur_x = rail_x2
+        # Update for next ramp
+        cur_x = x_flat2 + m_to_idx(ramp_spacing)
 
-    # Final flat area for finish
-    end_x = m_to_idx(length)
-    if cur_x < end_x:
-        height_field[cur_x:end_x, :] = 0
-        goals[7] = [cur_x + m_to_idx(0.9), mid_y]
-    else:
-        goals[7] = [end_x-1, mid_y]
+    # Final goal at end of last flat
+    final_goal_x = min(cur_x, height_field.shape[0]-1)
+    goals[7] = [final_goal_x, mid_y]
+
+    # Clean up goal indices to stay in bounds
+    goals = np.clip(goals, [0,0], [height_field.shape[0]-1, height_field.shape[1]-1])
+
+    # Fill any remaining flat region to the end with last height value
+    if cur_x < height_field.shape[0]:
+        last_height = np.mean(height_field[cur_x-1, :])
+        height_field[cur_x:, :] = last_height
 
     return height_field, goals

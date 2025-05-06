@@ -2,11 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """
-    Stepping Stone Balance Course: Series of narrow, staggered raised rectangular stepping stones across a shallow water pit,
-    forcing the quadruped to carefully step and balance as it traverses, emphasizing precise foot placement and lateral movement.
-    The obstacles are slightly offset laterally and spaced so the robot must weave left/right between goals.
-    """
+    """Stepping stone course: A sequence of narrow, tall, spaced-apart pillars for precise jumping."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -15,86 +11,89 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Terrain parameters
-    course_len_idx = m_to_idx(length)
-    course_wid_idx = m_to_idx(width)
-    spawn_idx_x = m_to_idx(1)
-    min_pad = m_to_idx(0.2)
+    mid_y = m_to_idx(width) // 2
 
-    # Parameters for stepping stones (platforms)
-    stone_length = 0.6 + 0.4 * (1 - difficulty)    # [0.6, 1] meters: harder->shorter
-    stone_length_idx = m_to_idx(stone_length)
-    stone_width = 0.5 + 0.15 * (1 - difficulty)    # [0.5, 0.65] meters: narrow but always sufficient
-    stone_width_idx = m_to_idx(stone_width)
-    edge_clearance = m_to_idx(0.20)
+    # Pillar parameters (stepping stones)
+    # Pillars force precise jumping, accuracy, and balance
+    num_pillars = 7  # one goal on each pillar, last goal beyond the last pillar
 
-    pit_depth = -(0.10 + 0.20 * difficulty)   # up to 0.3m at max difficulty, shallow at low difficulty
-    stone_height = 0.00 + 0.04 * difficulty   # near ground at easy, up to 4cm above ("floating") at hard
+    # Pillar size: narrow, but not less than 0.45m x 0.45m (still room for quadruped, but challenging)
+    min_pillar_size = 0.45
+    max_pillar_size = 0.6 - 0.15 * difficulty  # smaller at higher difficulty
+    min_pillar_size_idx = m_to_idx(min_pillar_size)
 
-    lateral_offset_range = m_to_idx(0.7) if difficulty > 0.5 else m_to_idx(0.4)
-    inter_stone_gap = 0.5 + 0.55 * difficulty   # [0.5, 1.05] meters
-    inter_stone_gap_idx = m_to_idx(inter_stone_gap)
+    # Height of pillars: ranging from 0.18m (easy) up to 0.45m (hard)
+    pillar_height_min = 0.18 + 0.22 * difficulty
+    pillar_height_max = 0.25 + 0.40 * difficulty
 
-    # 1. Set "pit": the central strip of the arena is a water pit, the spawn and ending segments are on solid ground
-    height_field[:, :] = 0.     # default
-    # Backfill the "water pit"
-    pit_start = spawn_idx_x + m_to_idx(0.5)
-    pit_end = m_to_idx(length) - m_to_idx(0.5)
-    height_field[pit_start:pit_end, :] = pit_depth
+    # Gaps between pillars: wider at higher difficulty (0.35m up to 0.9m)
+    min_gap = 0.35 + 0.5 * difficulty
+    max_gap = 0.45 + 0.7 * difficulty
 
-    # 2. Set the first and last areas as solid ground
-    height_field[0:pit_start, :] = 0
-    height_field[pit_end:, :] = 0
+    # Clear spawn region (always flat)
+    spawn_len = m_to_idx(2.0)
+    height_field[:spawn_len, :] = 0
+    # Goal 0: set at end of spawn region
+    goals[0] = [spawn_len - m_to_idx(0.5), mid_y]
 
-    # 3. Place stepping stones in staggered fashion
-    # Place the first stone at 1.5 m from start, and then each ~1.0-1.6 m further, alternating their lateral offset
-    # Start near the center widthwise, and alternate left-right
-    num_stones = 6  # with 1 start, 1 end goal
+    # Set the rest of the field to a deep pit
+    height_field[spawn_len:, :] = -1.2  # Pit depth, untraversable
 
-    stone_xs = [spawn_idx_x + m_to_idx(0.3)]
-    gap_variance = m_to_idx(0.15 + 0.3 * difficulty)  # more gap randomness at higher difficulty
-    for i in range(1, num_stones):
-        prev_x = stone_xs[-1]
-        gap = inter_stone_gap_idx + random.randint(-gap_variance, gap_variance)
-        new_x = prev_x + stone_length_idx + gap
-        if new_x+stone_length_idx >= m_to_idx(length) - edge_clearance:
-            break
-        stone_xs.append(new_x)
+    cur_x = spawn_len
 
-    stone_ys = []
-    # Create a gentle stagger: +- lateral_offset within bounds
-    center_y = course_wid_idx // 2
-    staggering_dir = 1
-    for i in range(len(stone_xs)):
-        lateral_jitter = (random.randint(-m_to_idx(0.08), m_to_idx(0.08)))  # small randomness for realism
-        offset = staggering_dir * (random.randint(int(0.6*lateral_offset_range), lateral_offset_range))
-        stone_y = np.clip(center_y + offset + lateral_jitter, edge_clearance, course_wid_idx-edge_clearance)
-        stone_ys.append(stone_y)
-        staggering_dir *= -1  # alternate left/right
+    # Helper: place a square pillar in the field, centered at (x, y)
+    def place_pillar(center_x, center_y, size, height):
+        half = size // 2
+        x_start = max(int(center_x - half), 0)
+        x_end   = min(int(center_x + half + 1), height_field.shape[0])
+        y_start = max(int(center_y - half), 0)
+        y_end   = min(int(center_y + half + 1), height_field.shape[1])
+        height_field[x_start:x_end, y_start:y_end] = height
 
-    # 4. Place stones on the height field
-    for i, (stone_x, stone_y) in enumerate(zip(stone_xs, stone_ys)):
-        x1 = int(max(stone_x - stone_length_idx // 2, pit_start + min_pad))
-        x2 = int(min(stone_x + stone_length_idx // 2, pit_end - min_pad))
-        y1 = int(max(stone_y - stone_width_idx // 2, edge_clearance))
-        y2 = int(min(stone_y + stone_width_idx // 2, course_wid_idx-edge_clearance))
-        height_field[x1:x2, y1:y2] = stone_height  # stones rise just above pit
-        # Place goal at stone center
-        goals[i+1] = [0.5*(x1+x2), 0.5*(y1+y2)]
+    # Parameters to wiggle the y positions: small zig-zag, but always leaves full pillar inside bounds
+    min_pillar_margin = m_to_idx(0.25)
+    y_lower = min_pillar_margin
+    y_upper = m_to_idx(width) - min_pillar_margin
+    # We'll move each pillar up/down by at most 0.7m from center, but not off the course
+    y_jitter = int(m_to_idx(0.7))
 
-    # 5. Set precise start and final goals
-    # Start goal at spawn on solid ground, centered
-    goals[0] = [m_to_idx(0.8), center_y]
-    # Final goal is after last stone, on solid ground
-    end_x = int(min(stone_xs[-1] + stone_length_idx + 2*inter_stone_gap_idx, course_len_idx-m_to_idx(0.3)))
-    goals[-1] = [end_x, center_y + random.randint(-m_to_idx(0.12), m_to_idx(0.12))]
+    random.seed(0)  # ensure reproducibility of course
+    for i in range(num_pillars):
+        # Set inter-pillar gap and pillar position
+        gap = random.uniform(min_gap, max_gap)
+        gap_idx = m_to_idx(gap)
 
-    # 6. Fill extra goals if <8 with linear interpolation along the path
-    # This ensures all goals are valid
-    idx_of_last = np.count_nonzero(np.any(goals != 0, axis=1)) - 1
-    if idx_of_last < 7:
-        for j in range(idx_of_last+1, 8):
-            v = (j-idx_of_last)/(8-idx_of_last)
-            goals[j] = (1-v)*goals[idx_of_last] + v*goals[-1]
+        # Pillar size and height
+        pillar_size = random.uniform(min_pillar_size, max_pillar_size)
+        pillar_size_idx = m_to_idx(pillar_size)
+        pillar_height = random.uniform(pillar_height_min, pillar_height_max)
+
+        # Pillar y position (allow gentle zig-zag)
+        if i == 0:
+            pillar_y = mid_y
+        else:
+            # Try to shift by -y_jitter, 0, or +y_jitter
+            direction = random.choice([-1, 0, 1])
+            step = direction * random.randint(0, y_jitter)
+            pillar_y = goals[i][1].astype(int) + step
+            # Keep within margin
+            pillar_y = max(y_lower, min(y_upper, pillar_y))
+
+        # Pillar x position
+        pillar_x = int(cur_x + gap_idx + pillar_size_idx // 2)
+
+        # Place the pillar
+        place_pillar(pillar_x, pillar_y, pillar_size_idx, pillar_height)
+
+        # Update cur_x to the end of this pillar
+        cur_x = pillar_x + pillar_size_idx // 2
+
+        # Place a goal in the center of the pillar's top
+        goals[i+1] = [pillar_x, pillar_y]
+
+    # Final goal is on the ground, 1m after last pillar and centered
+    last_goal_x = min(cur_x + m_to_idx(1.0), m_to_idx(length) - 4)
+    height_field[last_goal_x:, :] = 0  # flat ground after the course
+    goals[7] = [last_goal_x, mid_y]
 
     return height_field, goals

@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Slalom-style alternating tall barriers for robot to weave through, testing agile turning and path planning."""
+    """Alternating narrow balance beams and wide stepping stones over a deep trench to test balance and precise foot placement."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,66 +11,87 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Obstacle settings
-    # High walls spaced such that the robot must weave left and right to avoid collision
-    wall_length = 0.3 + 0.3 * difficulty       # Walls get longer at higher difficulty (block more of course)
-    wall_thickness = 0.16                      # Always at least 16 cm thick (about 0.6x body width)
-    wall_height = 0.25 + 0.25 * difficulty     # Up to 0.5 m high (need to go around not over for this task)
-    gap_width = 0.6 + (1.1 - 0.8 * difficulty) # Space between wall and course boundary (robot must fit through)
-    midline_y = m_to_idx(width / 2)
+    # Course settings
+    mid_y = m_to_idx(width // 2)
+    spawn_length = m_to_idx(2)  # robot spawns with center at x=1, so 2m of safe ground
+    field_x, field_y = m_to_idx(length), m_to_idx(width)
     
-    n_walls = 6
-    # Minimum spacing between walls to prevent overlap and ensure 8 goals fit
-    min_spawn_x = m_to_idx(2)
-    course_end_x = m_to_idx(length - 0.8)
-    wall_spacing = (course_end_x - min_spawn_x) // n_walls
-    # Adjust for field quantization
-    wall_length_idx = m_to_idx(wall_length)
-    wall_thickness_idx = m_to_idx(wall_thickness)
-    gap_width_idx = m_to_idx(gap_width)
-    
-    # Set flat spawn region (no obstacles in first 2 meters)
-    height_field[0:min_spawn_x, :] = 0.0
+    # --- Parameters based on difficulty ---
+    beam_w = 0.5 - 0.2 * difficulty   # Narrower beam at higher difficulty [0.5m to 0.3m]
+    beam_w = max(beam_w, 0.3)
+    beam_l = 1.6 + 0.2 * difficulty   # Slightly longer beam at higher difficulty [1.6m to 1.8m]
+    beam_h = 0.08 + 0.22 * difficulty # Higher beam at higher difficulty [0.08 to 0.3m]
+    stone_r = 0.6 - 0.18 * difficulty # Stepping stones smaller at high difficulty [0.6 to 0.42m]
+    stone_h = 0.06 + 0.14 * difficulty # Stones a bit taller at higher difficulty
+    trench_depth = -1.0
+    gap_l = 0.55 + 0.3 * difficulty   # Gap between obstacles; longer at higher difficulty [0.55 to 0.85m]
 
-    # Place alternating barriers and goals
-    left = True
-    goal_idx = 0
-    for i in range(n_walls):
-        wall_x = min_spawn_x + i * wall_spacing
-        # Walls alternate left/right leaving a "gap" before wall
-        if left:
-            wall_y1 = 0
-            wall_y2 = midline_y - gap_width_idx // 2
-            # Place wall up to the (gap)
-            height_field[wall_x:wall_x + wall_length_idx, wall_y1:wall_y2] = wall_height
-            # Place goal in the gap, slightly before the wall
-            goal_x = wall_x - m_to_idx(0.25)
-            goal_y = wall_y2 + gap_width_idx // 3
+    # Quantize
+    beam_w_idx = m_to_idx(beam_w)
+    beam_l_idx = m_to_idx(beam_l)
+    beam_h_f = beam_h # Will be used as height, not index
+    stone_r_idx = m_to_idx(stone_r)
+    stone_h_f = stone_h
+    gap_l_idx = m_to_idx(gap_l)
+
+    # -- Flat ground in spawn area --
+    height_field[0:spawn_length, :] = 0
+    # Put first goal at spawn center
+    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]
+
+    # -- Make everything after spawn a trench --
+    height_field[spawn_length:, :] = trench_depth
+
+    # -- Layout: Alternate beams and stepping stones; 3 beams, 3 stones, then goal --
+    cur_x = spawn_length
+    margin_y = m_to_idx(0.4) # margin from edges so obstacles are always fully within course
+    num_obstacles = 6 # 3 beams + 3 stones
+    for i in range(num_obstacles):
+        if i % 2 == 0:
+            # Balance beam
+            # Beams alternate offset to right/left to force turning slightly
+            direction = -1 if (i // 2) % 2 == 0 else 1 
+            beam_mid_y = mid_y + direction * m_to_idx(0.7 * difficulty) # At higher diff, shift more
+            
+            x1 = cur_x
+            x2 = min(x1 + beam_l_idx, field_x-1)
+            y1 = max(beam_mid_y - beam_w_idx//2, margin_y)
+            y2 = min(beam_mid_y + beam_w_idx//2, field_y-margin_y)
+            height_field[x1:x2, y1:y2] = beam_h_f
+
+            # Put goal at center of beam
+            gx = (x1 + x2) // 2
+            gy = (y1 + y2) // 2
+            goals[i+1] = [gx, gy]
+            obs_len = beam_l_idx
+
         else:
-            wall_y1 = midline_y + gap_width_idx // 2
-            wall_y2 = m_to_idx(width)
-            height_field[wall_x:wall_x + wall_length_idx, wall_y1:wall_y2] = wall_height
-            goal_x = wall_x - m_to_idx(0.25)
-            goal_y = wall_y1 - gap_width_idx // 3
-        # Clamp to valid indices
-        goal_x = np.clip(goal_x, min_spawn_x, m_to_idx(length) - 1)
-        goal_y = np.clip(goal_y, 0, m_to_idx(width) - 1)
-        goals[goal_idx] = [goal_x, goal_y]
-        goal_idx += 1
-        left = not left
+            # Stepping stone (circular platform)
+            stone_x = min(cur_x + stone_r_idx + 2, field_x-1)
+            # Stagger stone slightly in y
+            stone_y = mid_y + m_to_idx(random.uniform(-0.3, 0.3) * (1 + difficulty)) 
+            stone_x1 = max(stone_x - stone_r_idx, 0)
+            stone_x2 = min(stone_x + stone_r_idx, field_x-1)
+            stone_y1 = max(stone_y - stone_r_idx, margin_y)
+            stone_y2 = min(stone_y + stone_r_idx, field_y-margin_y)
 
-    # Place 7th goal at the center near the end, after the last wall, to force a straight path to the end
-    last_gap_x = min_spawn_x + n_walls * wall_spacing - m_to_idx(0.2)
-    last_gap_x = np.clip(last_gap_x, 0, m_to_idx(length) - 1)
-    last_gap_y = midline_y
-    goals[6] = [last_gap_x, last_gap_y]
+            # Draw round stone in x1:x2, y1:y2
+            for xx in range(stone_x1, stone_x2):
+                for yy in range(stone_y1, stone_y2):
+                    # Circle equation
+                    if ((xx-stone_x)**2 + (yy-stone_y)**2) <= stone_r_idx**2:
+                        height_field[xx, yy] = stone_h_f
+            
+            # Set goal on center of stone
+            goals[i+1] = [stone_x, stone_y]
+            obs_len = 2*stone_r_idx
 
-    # Final goal is at the very end, to drive robot to completion
-    goals[7] = [m_to_idx(length) - m_to_idx(0.5), midline_y]
-    # Make sure there are no obstacles at last 50cm, robot can finish on flat ground
-    height_field[m_to_idx(length)-m_to_idx(0.6):, :] = 0.0
+        # Move to next obstacle, include a gap
+        cur_x = int(cur_x + obs_len + gap_l_idx)
 
-    # Ensure all 8 goals are within map bounds (safety check)
-    goals = np.clip(goals, [[0,0]], [m_to_idx(length)-1, m_to_idx(width)-1])
-    
+    # -- Final stretch: flat, with goal at end --
+    end_x = min(field_x-1, cur_x + m_to_idx(1.0))
+    height_field[cur_x:end_x, :] = 0
+    goals[7] = [int((cur_x + end_x) // 2), mid_y]
+
     return height_field, goals

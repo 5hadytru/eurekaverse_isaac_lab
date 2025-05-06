@@ -2,79 +2,86 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Series of balanced beams (narrow walkways) elevated above deep pits, for precise foot placement and balancing."""
+    """Series of narrow balance beams over deep pits, testing dynamic balancing and precise foot placement."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
-        return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
+        if isinstance(m, list) or isinstance(m, tuple):
+            return [round(i / field_resolution) for i in m]
+        return np.round(m / field_resolution).astype(np.int16)
 
+    # Allocate the terrain field and goals array
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    ## Parameters for beams
-    beam_num = 6
-    # Beam width: challenging precision, at least 0.42 m (about 1.5x robot width), never <0.4m
-    beam_width = 0.42 - 0.1 * difficulty  # Narrower as difficulty increases, but never <0.4
-    beam_width = max(beam_width, 0.4)
+    FIELD_LEN = m_to_idx(length)
+    FIELD_WID = m_to_idx(width)
+
+    # Constants for obstacle sizes, relative to robot size (robot ~0.645 x 0.28 m)
+    beam_width = 0.34 + 0.2*(1-difficulty)      # beams are 0.34m wide at hard, up to 0.54m at easy
     beam_width_idx = m_to_idx(beam_width)
-    # Beam height: 0.12-0.35 (tall enough to punish falling), up at higher difficulty
-    beam_height = 0.12 + 0.23 * difficulty
-    # Space between beams (pit): 0.50 (easy) to 1.60 (hard) meters
-    pit_width = 0.5 + 1.10 * difficulty
-    pit_width_idx = m_to_idx(pit_width)
-    # Beam length: fill area between pits
-    usable_length = length - 2   # leave 2m for spawn and exit
-    beam_length = usable_length / beam_num
+    beam_height = 0.10 + 0.13*difficulty       # 10cm ~ 23cm up
+    beam_gap = 0.66 + 1.05*difficulty          # 0.66m up to 1.7m gap between beams (forces jumps at higher diff)
+    pit_depth = -0.38 - 0.62*difficulty        # pits are -0.38m to -1.0m deep
+
+    beam_length = 1.85 + 1.2*(1-difficulty)    # 1.85m beam at hard, up to 3.05m at easy
     beam_length_idx = m_to_idx(beam_length)
+    min_goal_offset = m_to_idx(0.25)           # keep goals well within beams
 
-    # Beams may be slightly staggered left or right
-    mid_y = m_to_idx(width / 2)
-    max_offset = m_to_idx((width - beam_width) / 2 - 0.1)   # beams must always fit
+    y_center = FIELD_WID // 2
+    beam_y0 = y_center - beam_width_idx // 2
+    beam_y1 = beam_y0 + beam_width_idx
 
-    # Set pit depth: deep enough to force failed attempt without climbing out
-    pit_depth = -0.6 - 0.6 * difficulty
+    # Flat spawn section
+    spawn_len = m_to_idx(2)
+    height_field[:spawn_len, :] = 0
 
-    # Set spawn and end flat
-    spawn_len_idx = m_to_idx(2)
-    end_len_idx = m_to_idx(1)
-    height_field[:spawn_len_idx, :] = 0
-    height_field[-end_len_idx:, :] = 0
+    # Place first goal (start)
+    goals[0] = [spawn_len - m_to_idx(0.5), y_center]
 
-    # Set goals
-    start_x = spawn_len_idx
-    cur_x = start_x
-    step_idx_list = []
+    # Lay out 6 balance beams separated by pits, last goal on flat ground
+    cur_x = spawn_len
 
-    for i in range(beam_num):
-        # Random offset
-        offset = random.randint(-max_offset, max_offset)
-        y0 = mid_y + offset - beam_width_idx // 2
-        y1 = mid_y + offset + (beam_width_idx + 1) // 2
-        x0 = cur_x
-        x1 = min(cur_x + beam_length_idx, height_field.shape[0] - end_len_idx)
-        # Draw the beam
-        height_field[x0:x1, y0:y1] = beam_height
-        # Set the goal at 2/3 along the beam, centered
-        goal_x = x0 + int((x1-x0) * np.clip(0.66 + 0.15*(random.random()-0.5), 0.55, 0.75))
-        goal_y = (y0 + y1) // 2
-        goals[i+1] = [goal_x, goal_y]
-        step_idx_list.append((x0, x1, y0, y1))
-        # Next pit
-        cur_x = x1
-        # Draw the pit so that everywhere off-beam is a pit
-        height_field[x1:x1+pit_width_idx, :] = pit_depth
-        cur_x += pit_width_idx
+    for i in range(6):
+        # Place pit (set to negative height)
+        pit_start = cur_x
+        pit_end = cur_x + m_to_idx(0.22 * (1-difficulty) + 0.12) if i > 0 else cur_x # skip at first (already flat)
+        if i > 0:
+            pit_width = pit_end - pit_start
+            height_field[pit_start:pit_end, :] = pit_depth
 
-    # Set final goal at the beginning of the last flat section (exit)
-    goals[0] = [m_to_idx(1.0), mid_y] # spawn
-    goals[beam_num+1] = [min(height_field.shape[0] - m_to_idx(0.5), height_field.shape[0] - 2), mid_y]
+        cur_x = pit_end
+        # Add small lateral offset at harder difficulties for extra balancing challenge
+        y_offset = int((random.random()-0.5) * (FIELD_WID // (6 + 6*(1-difficulty))))
+        b_y0 = np.clip(beam_y0 + y_offset, 0, FIELD_WID-beam_width_idx)
+        b_y1 = b_y0 + beam_width_idx
 
-    # Fill leftovers in goals to meet the 8 total
-    for i in range(beam_num+2, 8):
-        # Just repeat exit goal
-        goals[i] = goals[beam_num+1]
+        # Place the beam
+        beam_start = cur_x
+        beam_end = cur_x + beam_length_idx
+        beam_end = min(beam_end, FIELD_LEN)  # prevent overrun at end
+        height_field[beam_start:beam_end, b_y0:b_y1] = beam_height
+        # Set pit everywhere else (other than beam)
+        height_field[beam_start:beam_end, :b_y0] = pit_depth
+        height_field[beam_start:beam_end, b_y1:] = pit_depth
 
-    # Ensure beam edges are not cut off
-    height_field[:spawn_len_idx, :] = 0 # clear spawn again if any overlap
+        # Set goal at center of beam
+        mid_x = (beam_start + beam_end) // 2
+        mid_y = (b_y0 + b_y1) // 2
+        goals[i+1] = [mid_x, mid_y]
 
+        # Step forward to next pit
+        cur_x = beam_end + m_to_idx(beam_gap)
+        if cur_x >= FIELD_LEN - m_to_idx(1):
+            break  # finish before running off the area
+
+    # Final flat section (safe zone)
+    safe_zone_st = min(cur_x, FIELD_LEN)
+    height_field[safe_zone_st:, :] = 0
+    goals[7] = [safe_zone_st + m_to_idx(0.5), y_center]
+
+    # Fill any leftover unset goals (if finished early)
+    for j in range(8):
+        goals[j, 0] = np.clip(goals[j, 0], 0, FIELD_LEN-1)
+        goals[j, 1] = np.clip(goals[j, 1], 0, FIELD_WID-1)
     return height_field, goals

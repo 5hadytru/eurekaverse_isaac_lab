@@ -20,6 +20,7 @@ setup(
         'tenacity',
         'tqdm',
         'ipdb',
+        'nvidia-ml-py3'
     ],
     packages=find_packages()
 )

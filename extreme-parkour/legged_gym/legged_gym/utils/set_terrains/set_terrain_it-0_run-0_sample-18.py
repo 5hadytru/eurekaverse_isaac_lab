@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Parallel balance beams of increasing narrowness for testing precise foot placement and balance."""
+    """Series of tilted balance beams to challenge the robot's dynamic walking and balance."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -12,73 +12,57 @@ def set_terrain(length, width, field_resolution, difficulty):
     goals = np.zeros((8, 2))
 
     # Balance beam parameters
-    num_beams = 4
-    # Beams heights: moderate height, enough to discourage falling
-    beam_height = 0.2 + 0.25 * difficulty      # 0.2–0.45m
-    beam_length = 2.0                          # Each beam is 2m long
-    # Beams become narrower with difficulty
-    min_beam_width = 0.18                      # min width never less than 18cm (smaller than feet span but traversable)
-    max_beam_width = 0.45                      # starting width: at easy difficulty
-    beam_width = max_beam_width - (max_beam_width-min_beam_width)*difficulty
-    min_gap_w = 0.40                           # Minimum safe width for robot to turn at end
+    # Each beam spans the course width; their heights and slopes increase with difficulty
+    beam_length = 1.7 - 0.4 * difficulty   # shorter beams for higher difficulty
+    beam_width = 0.42 + 0.25 * (1-difficulty) # slightly wider at low difficulty
+    beam_start_height = 0.07 + 0.09 * difficulty
+    beam_max_slope = 0.06 + 0.17 * difficulty     # meters elevation over length
 
-    # Beam configuration: zig-zag pattern
-    x_gap = 0.3 + 0.3*difficulty               # spacing between beam ends
-    y_margin = 0.2
-    available_y = width - 2*y_margin
-    beam_spacing = (available_y-(num_beams*beam_width))/(num_beams-1)
-    beam_start_x = 2.1                         # leave 2.1m for spawn & turn-in
-    beam_end_x = beam_start_x + beam_length
+    gap_len = 0.27 + 0.48 * difficulty
+    num_beams = 6
 
-    # Set the starting area
-    spawn_length = m_to_idx(2.0)
-    height_field[0:spawn_length, :] = 0
+    total_beam_and_gaps = num_beams * m_to_idx(beam_length) + (num_beams-1) * m_to_idx(gap_len)
+    available_length = m_to_idx(length) - m_to_idx(2) - m_to_idx(1) # leave spawn and exit areas
 
-    # Zig-zag beam path: robot must cross one beam, turn to next, etc
-    y_positions = []
+    # Distribute beams and gaps in sequence along x-axis
+    x = m_to_idx(2)   # Start after safe spawn zone
+    mid_y = m_to_idx(width/2)
+
+    def add_beam(start_x, beam_len, center_y, slope, height_start):
+        """Adds a sloped balance beam."""
+        beam_width_idx = m_to_idx(beam_width) // 2
+        for i in range(m_to_idx(beam_len)):
+            h = height_start + slope * (i)
+            height_field[start_x+i, center_y-beam_width_idx:center_y+beam_width_idx] = h
+
+    # Set spawn area flat
+    height_field[:x, :] = 0
+    goals[0] = [x - m_to_idx(1), mid_y] # first goal at the end of spawn area
+
     for i in range(num_beams):
-        y_positions.append(y_margin + i*(beam_width+beam_spacing) + beam_width/2.0)
+        # Random slope direction for variety (+ up, - down)
+        slope = random.choice([1, -1]) * (beam_max_slope / m_to_idx(beam_length))
+        # Random left/right offset (beam center y), small at low difficulty
+        beam_offset_range = (0.10 + 0.70 * difficulty) * (width/2 - beam_width/2 - 0.3)
+        beam_center_y = mid_y + m_to_idx(random.uniform(-beam_offset_range, beam_offset_range))
+        height_start = beam_start_height + random.uniform(-0.03, 0.03)*difficulty
+        # Add narrow, sloped beam
+        add_beam(x, beam_length, beam_center_y, slope, height_start)
+        # Set next goal at middle of beam
+        beam_center_x = x + m_to_idx(beam_length/2)
+        goals[i+1] = [beam_center_x, beam_center_y]
+        # Set gaps between beams to be shallow pit
+        pit_x1 = x + m_to_idx(beam_length)
+        pit_x2 = pit_x1 + m_to_idx(gap_len)
+        if pit_x2 < m_to_idx(length) - m_to_idx(1):
+            height_field[pit_x1:pit_x2, :] = -0.22 - 0.15*difficulty
+        x = pit_x2
 
-    # Place the beams and the goals along the zig-zag path
-    # Start
-    goals[0] = [m_to_idx(1.0), m_to_idx(width/2.)]
-
-    # Helper function
-    def draw_beam(x0, x1, y, bw):
-        y0 = m_to_idx(max(y-bw/2, 0))
-        y1 = m_to_idx(min(y+bw/2, width))
-        height_field[m_to_idx(x0):m_to_idx(x1), y0:y1] = beam_height
-
-    # Place beams alternating left-right in y
-    dir_sign = 1                           # direction along y axis; alternating zig-zag
-    cur_x = beam_start_x
-    for bi in range(num_beams):
-        y_c = y_positions[bi]
-        # Each beam
-        draw_beam(cur_x, cur_x+beam_length, y_c, beam_width)
-
-        # Place goal near end of this beam, before the turn
-        xg = cur_x + beam_length - 0.3
-        goals[bi+1] = [m_to_idx(xg), m_to_idx(y_c)]
-        # Between beams: short flat segment + gap to next beam
-        if bi < num_beams-1:
-            # Flat pad for turning at end of beam
-            pad_x0 = cur_x + beam_length
-            pad_x1 = pad_x0 + x_gap
-            y_next = y_positions[bi+1]
-            # The turning pad connects both beams' y centers, wide enough for a turn
-            y_min = min(y_c, y_next) - min_gap_w/2
-            y_max = max(y_c, y_next) + min_gap_w/2
-            height_field[m_to_idx(pad_x0):m_to_idx(pad_x1), m_to_idx(y_min):m_to_idx(y_max)] = beam_height
-
-            # Place goal for the turn pad (alternate left/right on the pad)
-            goals[bi+2] = [m_to_idx(pad_x0 + (x_gap/2)), m_to_idx(y_next)]
-            cur_x = pad_x1
-        # For the final beam, after loop add the last goal
-
-    # After the final beam, make a broad goal area at the end
-    final_x = cur_x + beam_length
-    height_field[m_to_idx(cur_x):m_to_idx(final_x), :] = 0  # ground
-    goals[7] = [m_to_idx(final_x - 0.5), m_to_idx(width/2.)]
+    # Final goal on ground at end of corridor
+    if x < m_to_idx(length):
+        height_field[x:, :] = 0
+        goals[7] = [x + m_to_idx(0.6), mid_y]
+    else:
+        goals[7] = [m_to_idx(length)-1, mid_y]
 
     return height_field, goals

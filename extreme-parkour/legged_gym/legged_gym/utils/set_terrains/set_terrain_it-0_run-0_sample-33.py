@@ -2,83 +2,84 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Slalom-style course using a series of alternating wide barriers for lateral maneuvering skill."""
+    """Slalom course with tall barriers for the quadruped to weave around and squeeze through."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
-        if isinstance(m, (list, tuple)):
-            return [round(i / field_resolution) for i in m]
-        return np.round(m / field_resolution).astype(np.int16)
+        return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
 
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # --- COURSE PLAN ---
-    # The course consists of 6 alternating wide barriers ("slalom poles"), spaced along x.
-    # Barriers reach from one side of the course to the other except for a wide gap (the 'gate') on alternating L/R sides.
-    # The quadruped must alternate its y-position while advancing, requiring agile lateral movement.
-    # Barrier height increases with difficulty.
-    # Finishes with a straight sprint to the final goal.
+    # SLALOM DETAILS
+    # Tall barriers for the dog to weave through. 
+    # Encourages tight turning, steering, and side-stepping, with barrier widths/narrowness set by difficulty.
 
-    # Obstacle and gap sizing
-    barrier_width = 0.2 + 0.2 * difficulty      # meters, thickness of each slalom barrier
-    barrier_height = 0.1 + 0.25 * difficulty    # meters, climbs at low difficulty, jumps/bar jumps at high
-    gate_width = 1.2 - 0.5 * difficulty         # meters, narrows with difficulty
+    # Constants for obstacles
+    num_barriers = 6
+    min_gap = 0.5         # Minimum gap between barrier edge and course wall (meters)
+    min_gap_idx = m_to_idx(min_gap)
+    barrier_width = 0.35 + 0.10 * (1-difficulty)   # meters, get wider at low difficulty
+    barrier_width_idx = m_to_idx(barrier_width)
+    barrier_length = 1.0 + 0.8 * difficulty        # meters, how far barriers extend into course, get longer at high diff
+    barrier_length_idx = m_to_idx(barrier_length)
+    barrier_height = 0.25 + 0.25 * difficulty      # meters, high enough to force navigating around (not over)
+    spacing = (length - 2.5) / (num_barriers + 1)  # distance from each barrier to next (meters)
+    spacing_idx = m_to_idx(spacing)
 
-    # Ensure gaps are at least quadruped body width even at max difficulty
-    gate_width = max(gate_width, 0.4)
-    # Spacing between barriers
-    n_barriers = 6
-    barrier_spacing = (length - 3) / (n_barriers + 1)  # leave space for spawn (2m) and finish (1m)
+    course_mid_y = m_to_idx(width / 2)
+    course_width_idx = m_to_idx(width)
 
-    mid_y = m_to_idx(width / 2)
-    spawn_x = m_to_idx(1.0)
-    spawn_area = m_to_idx(2.0)
+    spawn_x_idx = m_to_idx(1)
+    start_buffer_x_idx = m_to_idx(2)
+    height_field[:start_buffer_x_idx, :] = 0  # Flat spawn
 
-    # First goal is just ahead of spawn, centered
-    goals[0] = [spawn_x + m_to_idx(0.4), mid_y]
+    # Barrier orientation alternates left/right, with offset so the robot weaves
+    left_side = True
+    cur_x = start_buffer_x_idx
+    goal_spacing = (length - 2) / 7  # Spread goals (even after each barrier)
 
-    # Set spawn area to flat
-    height_field[:spawn_area, :] = 0
+    # Place barriers
+    for i in range(num_barriers):
+        barrier_center_x = cur_x + spacing_idx
+        barrier_x_start = barrier_center_x
+        barrier_x_end = barrier_center_x + barrier_length_idx
 
-    # Place alternating barriers and path goals
-    for i in range(n_barriers):
-        x0_m = 2.0 + (i + 1) * barrier_spacing
-        x0 = m_to_idx(x0_m)
-        barrier_thick = m_to_idx(barrier_width)
-        gate = m_to_idx(gate_width)
-        y_total = m_to_idx(width)
-        side = i % 2  # 0: left gate, 1: right gate
-
-        # Compute where the gap (gate) is
-        if side == 0:  # gap on left
-            gate_start = 0
-            gate_end = gate
-        else:  # gap on right
-            gate_start = y_total - gate
-            gate_end = y_total
-
-        # Fill most of the barrier except for the gate
-        if side == 0:
-            # barrier occupies [gate_end, end]
-            height_field[x0:x0 + barrier_thick, gate_end:] = barrier_height
+        if left_side:
+            barrier_y_start = min_gap_idx
+            barrier_y_end   = barrier_y_start + barrier_width_idx
+            # Goals on far side of barrier, near the right
+            goal_y = course_width_idx - min_gap_idx - m_to_idx(0.2)
         else:
-            # barrier occupies [0, gate_start]
-            height_field[x0:x0 + barrier_thick, :gate_start] = barrier_height
+            barrier_y_end   = course_width_idx - min_gap_idx
+            barrier_y_start = barrier_y_end - barrier_width_idx
+            # Goals on far side of barrier, near the left
+            goal_y = min_gap_idx + m_to_idx(0.2)
 
-        # Place goal just past the barrier, at the center of the gate
-        x_goal = x0 + barrier_thick + m_to_idx(0.25)  # just after barrier
-        if side == 0:
-            y_goal = (gate_start + gate_end) // 2
-        else:
-            y_goal = (gate_start + gate_end) // 2
-        goals[i + 1] = [x_goal, y_goal]
+        # Clamp indices just in case
+        barrier_y_start = max(0, min(course_width_idx - barrier_width_idx, barrier_y_start))
+        barrier_y_end = min(course_width_idx, max(barrier_width_idx, barrier_y_end))
 
-    # Final stretch: lets the robot run straight to a final goal
-    finish_x = m_to_idx(length - 1.0)
-    goals[7] = [finish_x, mid_y]
+        # Set the barrier height
+        height_field[ int(barrier_x_start):int(barrier_x_end), int(barrier_y_start):int(barrier_y_end) ] = barrier_height
 
-    # Ensure the finish is flat
-    height_field[finish_x:, :] = 0
+        # Place the goal just past the barrier and near the wall, so the agent must go around
+        goal_x = barrier_x_end + m_to_idx(0.20)
+        goal_x = min(goal_x, m_to_idx(length)-2) # Clamp within terrain
+        goals[i+1] = [ goal_x, goal_y ]
+
+        # Step forward for next barrier
+        cur_x = barrier_x_end
+        left_side = not left_side
+
+    # Start goal (at spawn area, center y)
+    goals[0] = [ m_to_idx(1), course_mid_y ]
+
+    # Final goal: Just before the far end of the course, centered y
+    goals[7] = [ m_to_idx(length) - m_to_idx(1), course_mid_y ]
+
+    # Ensure first and last meter of course are clear
+    height_field[-m_to_idx(1):, :] = 0
+    height_field[:start_buffer_x_idx, :] = 0
 
     return height_field, goals

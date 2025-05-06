@@ -2,7 +2,10 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A series of urban-style step-over rails placed at increasing heights and variable gaps for quadruped high-stepping and precise pacing."""
+    """
+    Series of balance beams: The course tests the quadruped's ability to precisely traverse long, narrow beams (variable difficulty), while negotiating short transitions between beams. 
+    The robot must climb onto the first beam, cross several beams (raised above pits), and turn in several places.
+    """
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,71 +14,83 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Parameters for step-over rails (like low hurdles or pipes found in urban parks)
-    # These are narrow, horizontal "rails" for the robot to step over at pace
-    rail_count = 6
-    rail_min_gap = 0.5 + 0.7 * difficulty     # Minimum gap between rails, meters
-    rail_max_gap = 1.2 + 0.5 * difficulty     # Maximum gap between rails, meters
-    rail_length = width - 0.5                 # Rail doesn't span complete width, to encourage lateral accuracy
-    rail_width = 0.1 + 0.15 * difficulty      # Rails are always wide enough, but increase slightly with difficulty
-    rail_height_min = 0.10 + 0.10 * difficulty   # Lowered at easy, raised at hard
-    rail_height_max = 0.15 + 0.18 * difficulty
+    # --- Parameters ---
+    # Difficulty determines beam width and beam height.
+    min_beam_width = 0.4
+    max_beam_width = 1.2
+    beam_width = max_beam_width - (max_beam_width - min_beam_width) * difficulty   # From 1.2m (easy) to 0.4m (hard)
+    beam_width_idx = m_to_idx(beam_width)
 
-    x_pos = m_to_idx(2.0)   # Spawn area behind the first obstacle
-    y_center = m_to_idx(width / 2)
+    beam_height = 0.10 + 0.18 * difficulty   # Beams are higher off ground on hard settings: up to 0.28m
+    pit_depth = -0.80 - 0.6 * difficulty     # Pits underneath are deeper at harder settings
 
-    # Set spawn (flat ground)
-    height_field[0:x_pos, :] = 0
-    # First goal: before first rail
-    goals[0] = [x_pos - m_to_idx(0.5), y_center]
+    beam_length = 2.5                         # Each beam spans about 2.5m
+    beam_length_idx = m_to_idx(beam_length)
 
-    goal_idx = 1
+    pit_length = 0.7 + 1.0 * difficulty       # Gaps between beams are longer for more difficulty
+    pit_length_idx = m_to_idx(pit_length)
 
-    # A helper for placing a "rail" obstacle (a narrow line/surface along the y axis at given x)
-    def place_rail(x, rail_length, rail_width, height):
-        mid_y = m_to_idx(width/2)
-        rail_hw = m_to_idx(rail_width / 2)
-        rail_hlen = m_to_idx(rail_length / 2)
-        y1 = int(mid_y - rail_hlen)
-        y2 = int(mid_y + rail_hlen)
-        # place the rail along x at given height
-        height_field[x:x+m_to_idx(0.12), y1:y2] = height
+    min_y_margin = 0.5                        # Minimum margin to wall from centerline of beam
+    usable_y = width - 2 * min_y_margin
+    # We'll alternate between center, left, and right to force turning
 
-    # Build the obstacle course: rails and goals
-    for i in range(rail_count):
-        # Save last rail's x for goal calculation
-        last_x_pos = x_pos
+    start_x = m_to_idx(2.0)
+    spawn_length = m_to_idx(2.0)
+    N_BEAMS = 5
+    beam_dirs = [0.0, -0.7, 0.7, 0.0, -0.5, 0.5]  # Y deviations to force mild left/right beams
 
-        # Place the rail (randomize its height and slight y offset for advancing difficulty)
-        current_rail_height = np.random.uniform(rail_height_min, rail_height_max)
-        y_offset = random.randint(-m_to_idx(0.2 + 0.2 * difficulty), m_to_idx(0.2 + 0.2 * difficulty))
-        rail_top_x = x_pos
-        # Offset the rail in y (so robot cannot just blindly strafe, must aim legs)
-        rail_mid_y = y_center + y_offset
-        rail_hlen = m_to_idx(rail_length / 2)
-        y1 = int(rail_mid_y - rail_hlen)
-        y2 = int(rail_mid_y + rail_hlen)
-        height_field[rail_top_x:rail_top_x+m_to_idx(0.12), y1:y2] = current_rail_height
+    # --- Begin construction ---
 
-        # Place a "goal" just after the rail, in its center (encourage robot to step over then pause at safe spot)
-        goals[goal_idx] = [rail_top_x + m_to_idx(0.3), rail_mid_y]
-        goal_idx += 1
-        # Advance to the next rail position (gap increases with difficulty and some randomness)
-        gap = np.random.uniform(rail_min_gap, rail_max_gap)
-        x_pos = int(rail_top_x + m_to_idx(0.13) + m_to_idx(gap))
+    # Region before first obstacle -- flat
+    height_field[:start_x, :] = 0
 
-    # After last rail, provide "landing zone" and set last goals
-    landing_zone_x = x_pos
-    # Flat area after obstacles
-    height_field[landing_zone_x:, :] = 0
+    # Place first goal near start
+    mid_y = m_to_idx(width / 2)
+    goals[0] = [m_to_idx(1.0), mid_y]
 
-    # Fill remaining goals (up to 8)
-    while goal_idx < 8:
-        next_goal_x = int(landing_zone_x + m_to_idx(0.4 + 0.5 * (goal_idx-rail_count)))
-        if next_goal_x >= height_field.shape[0]:
-            # If we run out of space, cap at edge
-            next_goal_x = height_field.shape[0] - m_to_idx(1)
-        goals[goal_idx] = [next_goal_x, y_center]
-        goal_idx += 1
+    # Place remaining beams and pits
+    x = start_x
+    beam_centers_y = [width / 2]
+    curr_y = width / 2
+
+    for i in range(N_BEAMS):
+        # Compute intended y position for this beam, relative to course center
+        deviation = beam_dirs[i % len(beam_dirs)] * usable_y * (0.40 + 0.26 * difficulty)  # Up to ~1m left/right
+        curr_y = np.clip(width / 2 + deviation, min_y_margin, width - min_y_margin)
+        beam_centers_y.append(curr_y)
+
+        # Indices for beam placement
+        cx = x + beam_length_idx // 2
+        cy = m_to_idx(curr_y)
+        half_width = beam_width_idx // 2
+
+        # Place pit before beam (except before first beam)
+        if i > 0:
+            x_pit_start = x - pit_length_idx
+            height_field[x_pit_start:x, :] = pit_depth
+
+        # Place beam (raised off pits)
+        x_beam_start = x
+        x_beam_end = x + beam_length_idx
+        y1 = cy - half_width
+        y2 = cy + half_width
+        y1_clipped = max(0, y1)
+        y2_clipped = min(m_to_idx(width), y2)
+        height_field[x_beam_start:x_beam_end, y1_clipped:y2_clipped] = beam_height
+
+        # Place goal at the center of each beam
+        if i < 7:
+            goals[i+1] = [cx, cy]
+
+        # Next start x: move past this beam and next pit
+        x = x_beam_end + pit_length_idx
+
+    # The rest is flat ground
+    height_field[x:, :] = 0
+    # Place final goal near end
+    if N_BEAMS + 1 < 8:
+        for idx in range(N_BEAMS + 1, 8):
+            # Evenly space final remaining goals to the flat end of the course
+            goals[idx] = [min(m_to_idx(length)-1, x + m_to_idx(0.5 * (idx - N_BEAMS))), m_to_idx(beam_centers_y[-1])]
 
     return height_field, goals

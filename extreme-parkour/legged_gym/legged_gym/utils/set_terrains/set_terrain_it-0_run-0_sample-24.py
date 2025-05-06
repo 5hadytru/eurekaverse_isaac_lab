@@ -2,76 +2,85 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Eight stepping stones over a narrow trench to test the robot's precise foot placement and turning."""
+    """Eight step obstacles ("stepping stones") across a deep trench requiring precise, sequential stepping."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
 
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
-    goals = np.zeros((8, 2))  # 8 goals
+    goals = np.zeros((8, 2))
 
-    # Stepping stone/trench design parameters
-    spawn_length = m_to_idx(2)  # Flat ground before first obstacle
-    height_field[:spawn_length, :] = 0  # Keep spawn area flat
+    # Stepping stone/trench parameters
+    # Trench is a pit that occupies the center of the course; stones are raised columns above the pit
+    trench_start_x = m_to_idx(2)  # Ensure the spawn area is clear
+    trench_end_x = m_to_idx(length - 1)  # Leave 1m at far end for flat goal
+    trench_width = m_to_idx(width * (0.45 + 0.25 * difficulty))  # Trench fills 45%-70% of course width with difficulty
 
-    # Define trench dimensions (width = 1.4m, length = spans most of course after spawn)
-    trench_x_start = spawn_length
-    trench_x_end = m_to_idx(length - 2)              # leave a finish area at the end
-    trench_width = m_to_idx(1.4)
-    trench_center = m_to_idx(width // 2)
-    trench_y1 = trench_center - trench_width//2
-    trench_y2 = trench_center + trench_width//2
+    pit_depth = -0.85 - 0.4 * difficulty  # Pit is deeper at high difficulty
+    # Set trench to negative height (pit)
+    trench_y_mid = m_to_idx(width // 2)
+    trench_y1 = (m_to_idx(width) - trench_width) // 2
+    trench_y2 = trench_y1 + trench_width
+    height_field[trench_start_x:trench_end_x, trench_y1:trench_y2] = pit_depth
 
-    # Trench depth
-    trench_depth = -0.65 - 0.35*difficulty
-
-    height_field[trench_x_start:trench_x_end, trench_y1:trench_y2] = trench_depth
-
+    # Place 8 stepping stones along a zigzag path across the trench
     # Stepping stone parameters
-    stone_length = m_to_idx(0.6)
-    stone_width = m_to_idx(0.35)
-    stone_height = 0.0   # flush with spawn area (forces careful foot placement — no step-up)
-    # Spacing: stones separated to force single step, and zig-zag with some lateral offset
+    stone_size = 0.5 + 0.25 * (1 - difficulty)  # Stones smaller with difficulty (min 0.5m, max 0.75m wide)
+    stone_h = 0.18 + 0.15 * difficulty  # Stone heights are higher at high difficulty
+    stone_dist_min = 1.0 - 0.3 * difficulty  # Closest stones at hardest setting
 
-    x_positions = np.linspace(trench_x_start + m_to_idx(0.7), trench_x_end - m_to_idx(1.2), 8).astype(np.int16)
-    y_mid = m_to_idx(width / 2)
-    max_offset = m_to_idx(0.4 + 0.3 * difficulty)     # Range of lateral offsets for zig-zag
+    stones_x = []
+    stones_y = []
 
-    # Alternating left/right offsets for zig-zag
-    offsets = []
-    for i in range(8):
-        # Odd stones offset left, even stones offset right
-        sign = (-1) ** i
-        # At higher difficulty, increase offset magnitude and some random
-        base_offset = int(sign * (max_offset * (0.45 + 0.4*random.random())))
-        offsets.append(base_offset)
+    trench_len = trench_end_x - trench_start_x
+    step_count = 8
 
-    for i, (x, offset) in enumerate(zip(x_positions, offsets)):
-        y = y_mid + offset
-        # Keep stone within trench edges
-        y = np.clip(y, trench_y1 + stone_width//2, trench_y2 - stone_width//2)
-        x1 = int(x - stone_length//2)
-        x2 = int(x + stone_length//2)
-        y1 = int(y - stone_width//2)
-        y2 = int(y + stone_width//2)
-        # Stepping stone slightly higher at higher difficulties (to force more precision)
-        stone_elev = stone_height + difficulty*0.07 + 0.03*random.uniform(-1,1)
-        height_field[x1:x2, y1:y2] = stone_elev
-        goals[i] = [int((x1 + x2)/2), int((y1 + y2)/2)]
+    spawn_area_x = m_to_idx(0.8)
+    # Keep area before trench flat and safe for spawn
+    height_field[0:trench_start_x, :] = 0
 
-    # Start (spawn) and finish areas
-    # Place goal[0] at start area, before the first stone
-    goals[0] = [m_to_idx(1.5), y_mid]
-    # Remaining 7 goals: place on each stepping stone (the above loop has set those)
-    # Last goal: after last stone, in flat finish area
-    finish_x = m_to_idx(length - 1.0)
-    finish_y = y_mid + offsets[-1]   # Continue the zig-zag
-    finish_y = np.clip(finish_y, m_to_idx(0.5), m_to_idx(width - 0.5))
-    goals[-1] = [finish_x, finish_y]
-    height_field[trench_x_end:, :] = 0  # finish area is flat
+    # Zigzag stones: alternate left/right with some randomness, but stones always stay above pit
+    for i in range(step_count):
+        # Evenly spaced steps along x
+        frac_x = (i + 1) / (step_count + 1)
+        stone_x = trench_start_x + int(frac_x * trench_len)
+        # Y position: zigzag left/right, but over trench
+        zigzag_offset = ((-1) ** i) * (trench_width // 4 - m_to_idx(0.15 + 0.1 * random.random()))
+        stone_y = (trench_y1 + trench_y2) // 2 + zigzag_offset
 
-    # Ensure all goals are within bounds
-    goals = np.clip(goals, [0,0], [m_to_idx(length)-1, m_to_idx(width)-1])
+        # Clamp to trench bounds
+        stone_y = max(trench_y1 + m_to_idx(stone_size//2+0.1), min(stone_y, trench_y2 - m_to_idx(stone_size//2+0.1)))
+
+        # Place stone (square/circular area)
+        x1 = max(0, stone_x - m_to_idx(stone_size / 2))
+        x2 = min(height_field.shape[0], stone_x + m_to_idx(stone_size / 2))
+        y1 = max(0, stone_y - m_to_idx(stone_size / 2))
+        y2 = min(height_field.shape[1], stone_y + m_to_idx(stone_size / 2))
+        height_field[x1:x2, y1:y2] = stone_h
+
+        stones_x.append(stone_x)
+        stones_y.append(stone_y)
+
+        # Set goals at centers of stones
+        goals[i] = [stone_x, stone_y]
+
+    # First goal is close to spawn, on flat ground before pit
+    goals[0] = [m_to_idx(1), m_to_idx(width) // 2]
+    # Shift stones+goals forward so goal indices are always ascending
+    for i in range(1, step_count):
+        goals[i] = [stones_x[i], stones_y[i]]
+
+    # Final (8th) goal: after the last stone, on safe ground beyond trench
+    safe_final_x = trench_end_x + m_to_idx(0.5)
+    safe_final_y = m_to_idx(width) // 2
+    goals[7] = [min(safe_final_x, height_field.shape[0]-1), safe_final_y]
+    # Make area behind trench flat and solid
+    height_field[trench_end_x:, :] = 0
+
+    # For visual convenience: fill corners and side edges of height_field 
+    # with flat ground, so missed steps are clear and penalizing
+    height_field[:, :trench_y1] = 0
+    height_field[:, trench_y2:] = 0
 
     return height_field, goals

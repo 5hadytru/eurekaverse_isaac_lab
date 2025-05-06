@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Alternating narrow balance beams and wide low platforms, testing balance control and precise foot placement."""
+    """Alternating balance beams with narrow planks over shallow pits: tests accurate foot placement and balance."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,74 +11,81 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Constants and robot size reference (0.645x0.28 meters)
-    course_len_idx = m_to_idx(length)
-    course_wid_idx = m_to_idx(width)
-    spawn_x = m_to_idx(1)
-    mid_y = course_wid_idx // 2
-    num_beams = 4  # Odd goals at start/end of beams
-    num_platforms = 4  # Even goals at end of platforms
-    beam_length = 1.4 + difficulty * 1.3  # Beams get longer with difficulty
-    beam_length_idx = m_to_idx(beam_length)
-    beam_width = 0.45 + 0.15 * (1-difficulty)  # 0.6m at easy, 0.45m at hard (still safe)
-    beam_width_idx = m_to_idx(beam_width)
+    # Key parameters based on quadruped size and difficulty
+    # Plank: balance beam height increases and gets more narrow with difficulty
+    # Pit: gets deeper and wider as difficulty increases
+    plank_length = 1.5  # meters
+    plank_width = max(0.35, 0.8 - 0.4 * difficulty)  # meters, never smaller than 0.35m
+    plank_height = 0.12 + 0.25 * difficulty        # meters
+    pit_depth = -0.10 - 0.25 * difficulty          # meters, negative for pits
+    pit_length = 0.6 + 0.8 * difficulty            # meters
+    # Always leave spawn area flat
+    spawn_length = 2.0  # meters
 
-    beam_height = 0.08 + 0.07 * difficulty  # Beams slightly above ground, up to 0.15m
-    platform_length = 1.0 + difficulty * 0.7
-    platform_length_idx = m_to_idx(platform_length)
-    platform_width = 1.4 + 0.6 * (1-difficulty)  # Platforms wider at easy, min 1.4m
-    platform_width_idx = m_to_idx(platform_width)
-    platform_height = 0.05 + 0.02 * (random.random() - 0.5)  # Platforms flush or slightly above ground
+    # Place features in the X direction, alternating: [flat] → plank → [pit] → plank → [pit]...
+    cur_x = m_to_idx(spawn_length)
+    mid_y = m_to_idx(width / 2)
+    beams = 6  # number of balance beams
 
-    gap_length = 0.13 + difficulty * 0.22  # 0.13~0.35m gaps between obstacles
-    gap_length_idx = m_to_idx(gap_length)
+    # Helper to add a plank at position
+    def add_plank(center_x, mid_y):
+        half_len = m_to_idx(plank_length / 2)
+        half_width = m_to_idx(plank_width / 2)
+        x1 = max(0, center_x - half_len)
+        x2 = min(m_to_idx(length), center_x + half_len)
+        y1 = max(0, mid_y - half_width)
+        y2 = min(m_to_idx(width), mid_y + half_width)
+        height_field[x1:x2, y1:y2] = plank_height
 
-    # Set spawn area: at least 2m, clear of obstacles
-    spawn_clear = m_to_idx(2.0)
-    height_field[:spawn_clear, :] = 0
-    goals[0] = [spawn_x, mid_y]  # First goal is right past spawn
+    # Helper to add a pit under and to the sides of the plank
+    def add_pit(center_x, mid_y):
+        half_len = m_to_idx(pit_length / 2)
+        # The pit is wider than the plank, so the flanks are pits, but the plank remains above, flush with surface
+        pit_margin = m_to_idx(0.05)  # leave small overlap for realism at plank edge
+        y1 = 0
+        y2 = m_to_idx(width)
+        pit_x1 = max(0, center_x - half_len)
+        pit_x2 = min(m_to_idx(length), center_x + half_len)
+        # Under the plank, only set pit outside a little margin below plank
+        plank_half_width = m_to_idx(plank_width / 2)
+        # Left of plank
+        height_field[pit_x1:pit_x2, y1:mid_y - plank_half_width - pit_margin] = pit_depth
+        # Right of plank
+        height_field[pit_x1:pit_x2, mid_y + plank_half_width + pit_margin:y2] = pit_depth
 
-    # Start building course, alternating beams and platforms, placing goals at obstacle ends
-    cur_x = spawn_clear
-    y_offset_choices = [0, m_to_idx(0.35), -m_to_idx(0.35)]  # Sometimes beams/platforms slightly laterally offset
+    # Set spawn area flat
+    height_field[:cur_x, :] = 0.0
+    # Place the first goal just ahead of spawn
+    goals[0] = [cur_x - m_to_idx(0.7), mid_y]
 
-    for i in range(1, 8):
-        if i % 2 == 1:
-            # Beam
-            x1 = cur_x
-            x2 = cur_x + beam_length_idx
-            # Slightly vary y for challenge, prevent going out of bounds
-            y_center = mid_y + random.choice(y_offset_choices)
-            y1 = max(0, y_center - beam_width_idx // 2)
-            y2 = min(course_wid_idx, y_center + int(np.ceil(beam_width_idx / 2)))
-            # The rest of the ground at this x is a pit
-            height_field[x1:x2, :] = -0.35 - 0.2 * difficulty
-            # Draw the beam above the pit
-            height_field[x1:x2, y1:y2] = beam_height
-            # Set goal at the end of the beam
-            goals[i] = [x2 - m_to_idx(0.18), (y1 + y2)//2]
-            cur_x = x2 + gap_length_idx
+    # Parameter for placing beams and pits
+    step_dist = m_to_idx(1.4)  # nominal distance from beam center to center; tune as needed
+    zigzag_offset = m_to_idx(0.55 + 0.3 * difficulty)  # how much to zigzag laterally (difficulties 0-1: 0.55--0.85m)
+
+    # Alternate left/right zig-zag for each beam
+    for i in range(beams):
+        # Compute lateral offset
+        if i % 2 == 0:
+            beam_y = mid_y - zigzag_offset
         else:
-            # Wide, safe platform
-            x1 = cur_x
-            x2 = cur_x + platform_length_idx
-            y_center = mid_y + random.choice(y_offset_choices)
-            y1 = max(0, y_center - platform_width_idx // 2)
-            y2 = min(course_wid_idx, y_center + int(np.ceil(platform_width_idx / 2)))
-            height_field[x1:x2, :] = 0  # Reset pit
-            height_field[x1:x2, y1:y2] = platform_height
-            # Set goal at the center of the platform
-            goals[i] = [x2 - m_to_idx(0.20), (y1 + y2)//2]
-            cur_x = x2 + gap_length_idx
+            beam_y = mid_y + zigzag_offset
+        # Add pit beneath and flanking where the plank will be
+        add_pit(cur_x, beam_y)
+        # Add the plank over the pit
+        add_plank(cur_x, beam_y)
+        # Place a goal just after each plank's end (so robot must travel straight over beam)
+        if i < beams - 1:
+            # Project a bit past the end of this beam, at the same y
+            goals[i+1] = [cur_x + m_to_idx(plank_length / 2) - m_to_idx(0.1), beam_y]
+        else:
+            # For last beam, project closer to final flat area at course end
+            goals[i+1] = [cur_x + m_to_idx(plank_length / 2), beam_y]
+        # Advance cur_x for the next beam/pit
+        cur_x += step_dist
 
-    # Clear the final section
-    height_field[cur_x:, :] = 0
-    # Ensure last goal is in reach
-    goals[7] = [min(cur_x + m_to_idx(0.3), course_len_idx - m_to_idx(0.3)), mid_y]
-
-    # Guarantee all goals are within bounds and not inside pits
-    for i in range(8):
-        goals[i, 0] = np.clip(goals[i, 0], 0, course_len_idx-1)
-        goals[i, 1] = np.clip(goals[i, 1], 0, course_wid_idx-1)
+    # Fill the region after the last beam to finish flat
+    height_field[cur_x:, :] = 0.0
+    # Make final goal at far end center
+    goals[7] = [m_to_idx(length) - m_to_idx(0.8), mid_y]
 
     return height_field, goals

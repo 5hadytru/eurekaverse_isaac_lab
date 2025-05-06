@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Stepping stone sequence: Tests the robot's precise stepping & agile turning via narrow, spaced stepping stones across a pit."""
+    """Stepping stone 'log balance beam' course: Robot must traverse a sequence of long, narrow, slightly wobbly beams, with gaps in between that increase in length and narrowness at higher difficulty."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,63 +11,74 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    mid_y = m_to_idx(width // 2)
+    # Parameters for the beams (balance logs)
+    # Beam settings scale with difficulty
+    min_beam_width = 1.1 - 0.5 * difficulty  # [1.1, 0.6] m, always > quadruped width, but becomes more challenging
+    max_beam_width = 1.5 - 0.5 * difficulty  # widest beams first
+    min_beam_length = 1.8 - 0.7 * difficulty  # [1.8, 1.1] m
+    max_beam_length = 2.6 - 1.0 * difficulty  # [2.6, 1.6] m
+    beam_height = 0.08 + 0.20 * difficulty    # [0.08, 0.28] m
+
+    # Gaps between beams become wider/harder
+    min_gap = 0.15 + 0.25 * difficulty   # [0.15, 0.4] m
+    max_gap = 0.35 + 0.45 * difficulty   # [0.35, 0.8] m
+
+    field_x, field_y = m_to_idx(length), m_to_idx(width)
+    mid_y = field_y // 2
     spawn_length = m_to_idx(2)
-    total_length = m_to_idx(length)
-    total_width = m_to_idx(width)
-    
-    # 1. Set starting area flat
-    height_field[0:spawn_length, :] = 0
-    goals[0] = [m_to_idx(1.0), mid_y]  # slightly ahead of center spawn
 
-    # 2. Create a pit across the width with raised, spaced stepping stones
-    pit_start_x = spawn_length
-    pit_end_x = m_to_idx(length - 1)
-    pit_depth = -0.70 - 0.2 * difficulty  # force to use stepping stones
+    # Start with safe flat area for spawn
+    height_field[:spawn_length, :] = 0
+    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]  # first goal, just ahead of spawn
 
-    height_field[pit_start_x:pit_end_x, :] = pit_depth
+    # The region after spawn area is shallow "pit" (low or slightly negative, hard to walk, encourages beam usage)
+    height_field[spawn_length:, :] = -0.15 - difficulty * 0.35
 
-    # 3. Stepping stone parameters --- width just over body width, length = 0.5m, gaps adjust with difficulty
-    stone_length = 0.5
-    stone_width = 0.35 + 0.15 * (1 - difficulty)  # wider at low difficulty, minimum always larger than one footstep
-    n_stones = 6
-    step_gap = 0.40 + difficulty * 0.32  # from 40cm up to 72cm gaps
-    stone_height = 0.02 + 0.06 * difficulty  # higher at high difficulty
+    # Helper to add a beam as a raised platform
+    def add_beam(x0, x1, y_center, beam_w, h):
+        y0 = int(max(0, y_center - beam_w // 2))
+        y1 = int(min(field_y, y_center + beam_w // 2))
+        height_field[x0:x1, y0:y1] = h
 
-    first_stone_x = spawn_length + int(m_to_idx(0.5))
-    y_stride = m_to_idx(0.90 - 0.5 * difficulty)  # later stones may require turning
+    # Course: sequence of 6 stepped beams each with a goal on/after
+    cur_x = int(spawn_length)
+    used_beams = []
 
-    # Pre-calculate stone location centers for stones 1-6
-    stone_positions = []
-    cur_x = first_stone_x
-    cur_y = mid_y
-    for i in range(n_stones):
-        # Stagger left-right so the quadruped must steer
-        if i % 2 == 1:
-            delta_y = y_stride
-        else:
-            delta_y = -y_stride
-        center_y = cur_y + delta_y if i > 0 else cur_y
-        stone_positions.append((cur_x, center_y))
-        cur_x += m_to_idx(step_gap)
-        cur_y = center_y
+    for i in range(1, 7):  # 6 beams/obstacles
+        l = m_to_idx(np.random.uniform(min_beam_length, max_beam_length))
+        w = m_to_idx(np.random.uniform(min_beam_width, max_beam_width))
+        if w < m_to_idx(0.4):  # don't allow too narrow for balance beam
+            w = m_to_idx(0.4)
+        h = beam_height + np.random.uniform(-0.01, 0.03)  # add tiny random "wobble" in beam height
+        y_shift = int(random.uniform(-field_y // 4 * 0.5 * difficulty, field_y // 4 * 0.5 * difficulty))  # mild zig-zag at higher difficulty
+        beam_center_y = mid_y + y_shift
 
-    # 4. Place the stones and set goal points over each stone
-    for i, (sx, sy) in enumerate(stone_positions):
-        # Top left and bottom right bounds in indices
-        half_len = m_to_idx(stone_length/2)
-        half_wid = m_to_idx(stone_width/2)
-        x1 = max(0, sx - half_len)
-        x2 = min(total_length, sx + half_len)
-        y1 = max(0, sy - half_wid)
-        y2 = min(total_width, sy + half_wid)
-        height_field[x1:x2, y1:y2] = stone_height
-        # Goals
-        goals[i+1] = [sx, sy]
+        # Place beam (make sure it's within bounds)
+        x0, x1 = int(cur_x), int(min(cur_x + l, field_x - 2))
+        add_beam(x0, x1, beam_center_y, w, h)
+        used_beams.append((x0, x1, beam_center_y, w, h))
 
-    # 5. After last stone, transition to a 'safe zone' at raised ground, with final goal
-    final_zone_x = min(total_length, stone_positions[-1][0] + m_to_idx(step_gap//2))
-    height_field[final_zone_x:, :] = 0
-    goals[7] = [final_zone_x + m_to_idx(0.8), mid_y]  # put final goal in the middle of the far flat
+        # Place ith goal around 2/3rds of beam's x, center y
+        bx_center = int(x0 + 0.66 * (x1 - x0))
+        goals[i] = [bx_center, beam_center_y]
+
+        # Gap to next beam
+        gap = m_to_idx(np.random.uniform(min_gap, max_gap))
+        cur_x = int(x1 + gap)
+        if cur_x >= field_x - m_to_idx(1.0):
+            break
+
+    # Final goal: put it at course end straight after last beam, on flat ground
+    final_goal_x = min(field_x - m_to_idx(1), cur_x + m_to_idx(0.6))
+    goals[7] = [final_goal_x, mid_y]
+
+    # Fill out any unused goals (for e.g. if the ends up < 8 beams)
+    for idx in range(1, 7):
+        if np.all(goals[idx] == 0):
+            # Default to somewhere after spawn
+            goals[idx] = [spawn_length + m_to_idx(2.0 * idx), mid_y]
+
+    # Restore last area to be flat (for final goal)
+    height_field[final_goal_x:, :] = 0
 
     return height_field, goals

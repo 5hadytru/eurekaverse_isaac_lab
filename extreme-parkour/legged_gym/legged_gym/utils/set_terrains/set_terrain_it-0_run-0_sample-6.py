@@ -2,84 +2,145 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A series of ascending and descending ramps to test climbing and descending agility."""
+    """Stepping-stone 'city crossing' with narrow beams, curbs, and angled turns to test precise foot placement and turning."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
-    
+
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # DESIGN OF THE OBSTACLE COURSE:
-    # 8 ramps, alternating ascending and descending
-    # Each ramp is 1.2m long and 1.5m wide, with a 0.2m flat "rest" area in between.
-    # Ramp heights vary based on difficulty, so the max ramp angle increases as difficulty increases.
-    # Begin course after the first 2m to allow spawning on flat ground.
-    # Robot travels in a gentle S-curve along y as it proceeds, forcing light turning.
+    #####################
+    # Course Parameters #
+    #####################
 
-    # CONSTANTS
-    n_ramps = 8
-    start_x = 2.0  # meters (spawn buffer)
-    total_ramp_l = 1.2 * n_ramps + 0.2 * (n_ramps-1)
-    end_x = min(start_x + total_ramp_l, length-0.5)
-    ramp_length = 1.2
-    ramp_width = 1.5
-    rest_length = 0.2
-    min_height = 0.07      # Minimum height per ramp
-    max_height = 0.35      # Maximum height per ramp at difficulty==1
-    
-    mid_y = m_to_idx(width) // 2
-    swing = m_to_idx((width-ramp_width-0.3)/2)  # max deviation for S-curve
+    # Beam parameters (beams as narrow walkways over pits)
+    beam_width = 0.45 + 0.3*(1-difficulty)    # Narrows with difficulty, min: 0.45, max: 0.75m
+    beam_width_idx = m_to_idx(beam_width)
 
-    # Flat spawn area
-    height_field[:m_to_idx(2), :] = 0
-    goals[0] = [m_to_idx(1), mid_y]
+    beam_height = 0.12 + 0.09*difficulty      # Beam sits above a small pit
+    pit_depth = -(0.35 + 0.30*difficulty)     # Pit below = negative field
 
-    x = start_x
-    last_top = 0
-    for i in range(n_ramps):
-        # Alternating: up, down, up, ...
-        is_ascend = (i % 2 == 0)
-        amplitude = min_height + (max_height-min_height) * difficulty
-        height_change = (amplitude if is_ascend else -amplitude)
-        next_top = last_top + height_change
+    # Curb parameters (low, wide steps)
+    curb_width = 1.4
+    curb_length = 0.7 + 0.5*(1-difficulty)
+    curb_width_idx = m_to_idx(curb_width)
+    curb_length_idx = m_to_idx(curb_length)
+    curb_height = 0.13 + 0.11*difficulty
 
-        # S-curve: slight lateral shift of ramp over course
-        s_frac = (i/(n_ramps-1))*2-1  # goes from -1 to +1 over the ramps
-        y_center = mid_y + int(swing * 0.8 * np.sin(s_frac * np.pi/2))
-        y1 = max(0, y_center - m_to_idx(ramp_width/2))
-        y2 = min(m_to_idx(width), y_center + m_to_idx(ramp_width/2))
+    mid_y = m_to_idx(width/2)
+    total_x = m_to_idx(length)
+    total_y = m_to_idx(width)
 
-        # Define ramp region
-        x1 = m_to_idx(x)
-        x2 = m_to_idx(x + ramp_length)
+    # Offset for safe spawning
+    spawn_length_idx = m_to_idx(2)
+    height_field[:spawn_length_idx, :] = 0
+    goals[0] = [m_to_idx(1), mid_y]  # spawn point
 
-        # Linear height profile along ramp
-        for ramp_idx, xi in enumerate(range(x1, x2)):
-            frac = ramp_idx / max(1, x2-x1-1)
-            h = last_top + frac * (next_top - last_top)
-            height_field[xi, y1:y2] = h
+    ###############
+    # Beams/Pits  #
+    ###############
+    beam_segments = 2 + int(2 * difficulty)   # 2 beams at easy, up to 4 at hard
+    beam_length = (length - 5.0) / (beam_segments+1)  # leave space for curbs at both ends
+    beam_length_idx = m_to_idx(beam_length)
+    pit_length = 0.48 + 0.55*difficulty
+    pit_length_idx = m_to_idx(pit_length)
 
-        # Rest/flat area after ramp
-        rx1 = x2
-        rx2 = min(m_to_idx(x + ramp_length + rest_length), m_to_idx(length))
-        height_field[rx1:rx2, y1:y2] = next_top
+    curx_idx = spawn_length_idx
+    prev_goal = [curx_idx, mid_y]
+    goal_num = 1
 
-        # Place goal at end of ramp, slightly into the flat spot for safety
-        goal_x = x + ramp_length + 0.1
-        goals[i+1] = [m_to_idx(goal_x), y_center]
+    for seg in range(beam_segments):
+        # Place a pit
+        pit_start_x = curx_idx
+        pit_end_x = pit_start_x + pit_length_idx
+        height_field[pit_start_x:pit_end_x, :] = pit_depth
 
-        # Update position
-        x = x + ramp_length + rest_length
-        last_top = next_top
+        # Place beam over pit
+        # For challenge, offset the beam side to side at each segment
+        if seg % 2 == 0:
+            beam_center_y = mid_y - m_to_idx(0.8 + 0.6*difficulty) // 2
+        else:
+            beam_center_y = mid_y + m_to_idx(0.8 + 0.6*difficulty) // 2
 
-    # Fill the final area (after last ramp) with the final top height
-    if x < length:
-        height_field[m_to_idx(x):, :] = last_top
+        beam_start_x = pit_start_x
+        beam_end_x = pit_end_x
+        by1 = beam_center_y - beam_width_idx//2
+        by2 = beam_center_y + beam_width_idx//2
 
-    # Edge guards: ensure full ramp width fits in field
-    height_field[:, :m_to_idx(0.07)] = last_top  # Left edge guard
-    height_field[:, -m_to_idx(0.07):] = last_top # Right edge guard
+        # Ensure within bounds
+        by1 = max(by1, m_to_idx(0.1))
+        by2 = min(by2, total_y - m_to_idx(0.1))
+        height_field[beam_start_x:beam_end_x, by1:by2] = beam_height
+
+        # Place goal at middle of beam
+        if goal_num < 8:
+            gx = (beam_start_x + beam_end_x)//2
+            gy = (by1 + by2)//2
+            goals[goal_num] = [gx, gy]
+            prev_goal = [gx, gy]
+            goal_num += 1
+
+        curx_idx = pit_end_x + m_to_idx(0.18 + 0.1*difficulty)  # Slight gap for flat ground
+
+        # Flat area for stability on landing
+        height_field[curx_idx:curx_idx+m_to_idx(0.45), :] = 0
+
+        curx_idx += m_to_idx(0.45)
+
+    ##############
+    # Curb Steps #
+    ##############
+    # Place final curb series requiring single or double step-up, maybe with turns
+
+    curb_count = 2 if difficulty < 0.5 else 3
+    turn_angle = 0.45 + 0.5*difficulty  # Amount of "turn" at each curb step
+    curb_start_y = mid_y
+
+    for curb in range(curb_count):
+        cl = curb_length_idx
+        cw = curb_width_idx
+        ch = curb_height
+
+        curb_x1 = curx_idx
+        curb_x2 = curb_x1 + cl
+
+        # Place curb step at angle: left, right, center
+        direction = -1 if curb % 2 == 0 else 1
+        offset = direction * m_to_idx(turn_angle * (curb+1) * (1-difficulty+0.5))
+        curb_y1 = curb_start_y + offset - cw//2
+        curb_y2 = curb_start_y + offset + cw//2
+        curb_y1 = max(m_to_idx(0.1), min(total_y - cw - m_to_idx(0.1), curb_y1))
+        curb_y2 = curb_y1 + cw
+
+        # Raise the platform for curb
+        height_field[curb_x1:curb_x2, curb_y1:curb_y2] = ch
+
+        # Place goal at center of curb step
+        if goal_num < 8:
+            gx = (curb_x1 + curb_x2)//2
+            gy = (curb_y1 + curb_y2)//2
+            goals[goal_num] = [gx, gy]
+            prev_goal = [gx, gy]
+            goal_num += 1
+
+        # Move curx_idx for next curb
+        curx_idx = curb_x2
+
+    # Final goal after last curb
+    if goal_num < 8:
+        final_goal_x = min(curx_idx + m_to_idx(0.9), height_field.shape[0]-1)
+        final_goal_y = prev_goal[1]
+        goals[goal_num] = [final_goal_x, final_goal_y]
+
+    # Fill unused goals with last goal position (so the array is always size 8)
+    for i in range(goal_num+1, 8):
+        goals[i] = goals[goal_num]
+
+    # Ensure entire area is padded below 0 if necessary
+    # Make sure spawn and finish zones are always flat
+    height_field[0:spawn_length_idx, :] = 0
+    height_field[-m_to_idx(1):, :] = 0
 
     return height_field, goals

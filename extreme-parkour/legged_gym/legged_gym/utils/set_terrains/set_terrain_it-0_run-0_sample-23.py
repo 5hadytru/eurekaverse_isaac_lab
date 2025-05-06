@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Series of staggered low rails (beams) above a pit for the robot to balance and traverse."""
+    """Series of staggered narrow beams above pits to test precise foot placement and balance."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,71 +11,78 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # ------------------ Course Design -------------------
-    # This course tests the quadruped's balance and precise foot placement.
-    # The terrain is a pit (height -1.0) crossed by a sequence of narrow (0.4-0.5m wide) rails/beams.
-    # Rails alternate in lateral position with modest gaps, providing a zig-zag path forward.
-    # The rail width and gap distance become harder with increasing difficulty.
+    # --- Terrain & beam specifications ---
+    # Beams are narrow: width = 0.4 to 0.7m (harder for higher difficulty) 
+    # Beams are at similar height, but always above a -1m pit.
+    # Height of beams increases with difficulty to require precise stepping.
+    # Beams are staggered to require both turning and careful correction.
 
-    rail_width = 0.5 - difficulty * 0.1           # width: from 0.5m (easy) to 0.4m (hard)
-    rail_height = 0.12 + 0.10 * difficulty        # 0.12-0.22m above ground
-    rail_length = 1.5 + 0.5 * difficulty          # Rails get longer with higher difficulty (1.5-2m)
-    gap_length = 0.3 + 0.6 * difficulty           # Gaps between rails (0.3-0.9m)
-    num_rails = 6                                 # Number of rails to cross
+    min_beam_width = 0.7 - 0.3 * difficulty   # Between 0.7m (easy) and 0.4m (hard)
+    min_beam_width = max(0.4, min_beam_width)
+    max_beam_width = min_beam_width + 0.2     # beams not usually much wider
+    min_beam_len  = 2.4                       # at least 2 meters per beam
+    max_beam_len  = 2.8                       # a little more, for stagger effect
+    beam_height   = 0.07 + 0.18 * difficulty  # 7cm (easy) to 25cm (hard), above zero
 
-    width_idxs = m_to_idx(width)
-    mid_y = width_idxs // 2
+    n_beams = 6
+    spawn_area_x = m_to_idx(2)
+    total_length = m_to_idx(length)
+    total_width  = m_to_idx(width)
 
-    rail_width_idx = m_to_idx(rail_width)
-    rail_length_idx = m_to_idx(rail_length)
-    gap_length_idx = m_to_idx(gap_length)
+    # --- Prepare the pit area (all pit = -1.0, except spawn and last area) ---
+    height_field[:,:] = -1.0
+    # Set spawn region flat
+    height_field[0:spawn_area_x, :] = 0.0
+    # Set final meter flat (used for final goal)
+    height_field[-m_to_idx(1):, :] = 0.0
 
-    # --- Reset terrain to pit after robot spawn area ---
-    spawn_x = m_to_idx(2.0)
-    height_field[spawn_x:, :] = -1.0    # Big pit except under rails
+    # --- Beam configuration ---
+    # Beams are staggered left/right. Each requires a ~30-45 degree turn from the previous beam.
+    # Each goal is centered on a beam.
+    mid_y = total_width // 2
+    beam_centers = []  # each as (x, y), for goals
 
-    # --- Make spawn area flat (safe start for robot, no obstacles) ---
-    height_field[:spawn_x, :] = 0.0
-    goals[0] = [m_to_idx(1.5), mid_y]
-    
-    # Compute possible y positions for zig-zagging rails, left and right from midline
-    lateral_shift = int( m_to_idx(0.6 + 0.8 * difficulty) )  # rails can be shifted ±0.6~1.4m from midline
-    base_ys = [
-        mid_y,
-        mid_y + lateral_shift,
-        mid_y - lateral_shift,
-        mid_y,
-        mid_y + lateral_shift//2,
-        mid_y - lateral_shift//2,
-    ]
+    cur_x = spawn_area_x
+    last_y = mid_y
+    turn_directions = [1, -1] * 4  # alternate left/right
 
-    x = spawn_x
-    for i in range(num_rails):
-        # Determine y-center for this rail (zig-zags)
-        y_center = np.clip(base_ys[i % len(base_ys)], rail_width_idx//2, width_idxs-rail_width_idx//2-1)
+    for beam_i in range(n_beams):
+        beam_len  = m_to_idx(random.uniform(min_beam_len, max_beam_len))
+        beam_width = m_to_idx(random.uniform(min_beam_width, max_beam_width))
 
-        rail_x1 = x
-        rail_x2 = min(x + rail_length_idx, m_to_idx(length))   # Don't go out of bounds
-        rail_y1 = int(y_center - rail_width_idx//2) 
-        rail_y2 = int(y_center + np.ceil(rail_width_idx/2)) 
+        # The amount to stagger sideways, as a function of difficulty
+        y_stagger = m_to_idx((0.6 + 0.9 * difficulty) * turn_directions[beam_i])
+        candidate_y = last_y + y_stagger
 
-        # Paint rail (elevated path over pit) into the terrain
-        height_field[rail_x1:rail_x2, rail_y1:rail_y2] = rail_height
+        # Clamp beam to within field
+        y0 = max(0, min(total_width - beam_width, candidate_y - beam_width // 2))
+        y1 = y0 + beam_width
+        x0 = cur_x
+        x1 = min(x0 + beam_len, total_length - m_to_idx(3))
 
-        # Next goal: centered in the middle of this rail
-        goals[i+1] = [ (rail_x1 + rail_x2)//2, y_center ]
+        # Raise beam above pit
+        height_field[x0:x1, y0:y1] = beam_height
 
-        # Advance to the next rail start
-        x = rail_x2 + gap_length_idx
+        # Place goal at center of beam
+        xg = (x0 + x1) // 2
+        yg = (y0 + y1) // 2
+        beam_centers.append((xg, yg))
+        last_y = yg
 
-    # --- Last segment: build a "landing platform" at the end of the course and final goal ---
-    # Give the robot a meter-wide, full-width area at ground level
-    plat_x1 = min(x, height_field.shape[0] - 1)
-    plat_x2 = min(plat_x1 + m_to_idx(1.0), height_field.shape[0] )
-    height_field[plat_x1:plat_x2, :] = 0.0
-    goals[-1] = [ (plat_x1 + plat_x2)//2, mid_y ]
+        # Move x forward for next beam
+        gap_len = m_to_idx(0.6 + 0.5 * difficulty)  # bigger gap for higher difficulty
+        cur_x = x1 + gap_len
 
-    # --- Ensure all goal indices are valid integers within bounds ---
-    goals = np.clip(goals, [0,0], [height_field.shape[0]-1, height_field.shape[1]-1])
+    # --- Place goals ---
+    # 0th goal in spawn area, at spawn line
+    goals[0] = [spawn_area_x - m_to_idx(0.7), mid_y]
+    for i in range(n_beams):
+        goals[i+1] = list(beam_centers[i])
+    # Last goal on finish line, after last beam
+    final_x = total_length - m_to_idx(0.7)
+    goals[-1] = [final_x, last_y]
+
+    # --- Ensure last region is flat ground (at 0) for robot to reach the last goal ---
+    height_field[final_x-m_to_idx(0.5):, :] = 0.0
 
     return height_field, goals
