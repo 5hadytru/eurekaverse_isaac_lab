@@ -6,8 +6,10 @@ defaults:
 quadruped_model: "go1"                 # Robot model, "go1" or "a1"
 
 iterations: 8                          # Number of environment generation iterations
-train_iterations: 1500                 # Number of training iterations per generated environment
-eval_steps: 2001                       # Number of evaluation steps per environment (1001 is fairly accurate, 10001 is most accurate)
+train_iterations: 10                 # Number of training iterations per generated environment
+# train_iterations: 1000                 # Number of training iterations per generated environment
+eval_steps: 10                       # Number of evaluation steps per environment (1001 is fairly accurate, 10001 is most accurate)
+# eval_steps: 1001                       # Number of evaluation steps per environment (1001 is fairly accurate, 10001 is most accurate)
 num_terrain_types: 10                  # Number of terrains to generate
 num_parallel_runs: 1                   # Number of parallel training runs per iteration
 num_parallel_checks: 4                 # Number of parallel runs to query and check executability of GPT responses
@@ -19,7 +21,8 @@ deterministic_gpu: True                # Deterministically assign training and e
 wandb: True                            # Use wandb tracking
 
 gpt_model: "gpt-4.1-2025-04-14"        
-initial_query_sample_multiplier: 4     # Multiplier for the number of samples to query in first iteration
+initial_query_sample_multiplier: 1     # Multiplier for the number of samples to query in first iteration
+# initial_query_sample_multiplier: 4     # Multiplier for the number of samples to query in first iteration
 evolution_query_sample_multiplier: 4   # Multiplier for the number of samples to query in later iterations
 max_gpt_queries: 10                    # Maximum number of attempted GPT queries for a single prompt
 
