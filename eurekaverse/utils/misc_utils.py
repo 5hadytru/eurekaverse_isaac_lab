@@ -76,37 +76,14 @@ def get_num_gpus() -> int:
     """Return the total number of NVIDIA GPUs visible to NVML."""
     return _device_count()
 
-# ────────────────────────────────────────────────────────────────
-# Launch a command and return Popen handle
-# ────────────────────────────────────────────────────────────────
-def run_subprocess(command: str, log_file: Path | str | None):
-    """
-    Execute *command* inside Bash so that shell built‑ins (`source`, `&&`, etc.)
-    work. All output goes to stdout (stderr is merged) and is captured in PIPE.
-    """
-    env = os.environ.copy()
-    env["TQDM_DISABLE"] = "1"
-
-    proc = subprocess.Popen(
-        ["/bin/bash", "-c", command],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,   # merge streams
-        text=True,                  # str not bytes
-        bufsize=1,                  # line‑buffered
-        env=env,
-    )
-
-    # Prepend a header to the log file, if any
-    if log_file is not None:
-        log_path = Path(log_file)
-        log_path.parent.mkdir(exist_ok=True, parents=True)
-        with open(log_path, "a") as f:
-            f.write("\n" + "=" * 100 + "\n"
-                    f"Running command: {command}\n"
-                    + "=" * 100 + "\n")
-
-    return proc
-
+def run_subprocess(command, log_file):
+    if log_file == None:
+        process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={**os.environ.copy(), "TQDM_DISABLE": "1"})
+    else:
+        with open(log_file, "a") as f:
+            f.write("\n" + "="*100 + "\n" + f"Running command: {command}\n" + "="*100 + "\n")
+            process = subprocess.Popen(command.split(), stdout=f, stderr=f, env={**os.environ.copy(), "TQDM_DISABLE": "1"})
+    return process
 
 # ────────────────────────────────────────────────────────────────
 # Wait for success/failure strings, premature exit, or timeout
