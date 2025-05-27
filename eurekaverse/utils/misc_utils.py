@@ -76,14 +76,50 @@ def get_num_gpus() -> int:
     """Return the total number of NVIDIA GPUs visible to NVML."""
     return _device_count()
 
-def run_subprocess(command, log_file):
-    if log_file == None:
-        process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={**os.environ.copy(), "TQDM_DISABLE": "1"})
+# ────────────────────────────────────────────────────────────────
+# Launch a command and return Popen handle
+# ────────────────────────────────────────────────────────────────
+def run_subprocess(command: str, log_file: Path | str | None):
+    """
+    Execute *command* inside Bash so that shell built‑ins (`source`, `&&`, etc.)
+    work. Output handling depends on log_file parameter.
+    """
+    env = os.environ.copy()
+    env["TQDM_DISABLE"] = "1"
+
+    if log_file is None:
+        # No logging - capture in PIPE for caller to handle
+        proc = subprocess.Popen(
+            ["/bin/bash", "-c", command],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            env=env,
+        )
     else:
-        with open(log_file, "a") as f:
-            f.write("\n" + "="*100 + "\n" + f"Running command: {command}\n" + "="*100 + "\n")
-            process = subprocess.Popen(command.split(), stdout=f, stderr=f, env={**os.environ.copy(), "TQDM_DISABLE": "1"})
-    return process
+        # Log to file - write header then redirect output
+        log_path = Path(log_file)
+        log_path.parent.mkdir(exist_ok=True, parents=True)
+        
+        with open(log_path, "a") as f:
+            f.write("\n" + "=" * 100 + "\n"
+                    f"Running command: {command}\n"
+                    + "=" * 100 + "\n")
+        
+        # Open file again for subprocess to write to
+        log_file_handle = open(log_path, "a")
+        proc = subprocess.Popen(
+            ["/bin/bash", "-c", command],
+            stdout=log_file_handle,
+            stderr=log_file_handle,
+            text=True,
+            env=env,
+        )
+        # Store file handle so caller can close it after process completes
+        proc._log_file_handle = log_file_handle
+
+    return proc
 
 # ────────────────────────────────────────────────────────────────
 # Wait for success/failure strings, premature exit, or timeout

@@ -20,7 +20,7 @@ deterministic_gpu: True                # Deterministically assign training and e
 
 wandb: True                            # Use wandb tracking
 
-gpt_model: "gpt-4o-mini-2024-07-18"        
+gpt_model: "gpt-4.1-2025-04-14"        
 initial_query_sample_multiplier: 1     # Multiplier for the number of samples to query in first iteration
 # initial_query_sample_multiplier: 4     # Multiplier for the number of samples to query in first iteration
 evolution_query_sample_multiplier: 4   # Multiplier for the number of samples to query in later iterations
