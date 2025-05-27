@@ -598,9 +598,12 @@ def main(cfg):
 
         # Softly select which best runs to continue in the next iteration, and update lineage
         resume_run_ids = []
-        for i, proportion in enumerate(cfg.best_run_proportions):
-            num_copies = int(proportion * cfg.num_parallel_runs)
-            resume_run_ids.extend([best_previous_run_ids[i]] * num_copies)
+        if cfg.num_parallel_runs > 1:
+            for i, proportion in enumerate(cfg.best_run_proportions):
+                num_copies = int(proportion * cfg.num_parallel_runs)
+                resume_run_ids.extend([best_previous_run_ids[i]] * num_copies)
+        else:
+            resume_run_ids.extend([best_previous_run_ids[0]])
         if len(resume_run_ids) < cfg.num_parallel_runs:
             num_copies = cfg.num_parallel_runs - len(resume_run_ids)
             resume_run_ids.extend([best_previous_run_ids[0]] * num_copies)
