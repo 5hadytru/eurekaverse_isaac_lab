@@ -387,7 +387,8 @@ def restore_run(cfg):
 
     # Get the correct wandb id to resume
     wandb_api = wandb.Api()
-    runs = wandb_api.runs(path="upenn-pal/parkour", filters={"display_name": cfg.resume_run})
+    path_to_resume_project = f"{wandb_api.default_entity}/parkour" # Or your specific project if not "parkour"
+    runs = wandb_api.runs(path=path_to_resume_project, filters={"display_name": cfg.resume_run})
     assert len(runs) == 1, f"Expected 1 wandb run, got {len(runs)} called {cfg.resume_run}!"
     wandb_id = runs[0].id
 
@@ -657,7 +658,9 @@ def main(cfg):
         api = wandb.Api()
 
         for it, run_id in enumerate(best_previous_run_lineage + [best_previous_run_id]):
-            cur_run = api.run(f"upenn-pal/parkour/{wandb_id}_{it}_{run_id}")
+            child_wandb_run_id_str = f"{wandb_id}_{it}_{run_id}"
+            path_to_child_run = f"{api.default_entity}/parkour/{child_wandb_run_id_str}"
+            cur_run = api.run(path_to_child_run)
             for log in cur_run.history(samples=cfg.train_iterations, pandas=False):
                 step = int(log["_step"])
                 log = {key: val for key, val in log.items() if val is not None}
