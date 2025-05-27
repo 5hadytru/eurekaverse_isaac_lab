@@ -31,7 +31,7 @@ def set_terrain_flat(length, width, field_resolution, difficulty):
     goals = np.zeros((8, 2))
     goals[:, 0] = np.linspace(m_to_idx(2), m_to_idx(length - 2), 8)
     goals[:, 1] = m_to_idx(width) // 2
-    goals[:, 1] += np.random.randint(m_to_idx(-1.0), m_to_idx(1.0), size=(8))
+    goals[:, 1] += np.random.randint(m_to_idx(-1.0), max(m_to_idx(-1.0) + 1, m_to_idx(1.0)), size=(8))
     return height_field, goals
 
 def set_terrain_platforms(length, width, field_resolution, difficulty):
@@ -80,8 +80,8 @@ def set_terrain_platforms(length, width, field_resolution, difficulty):
     for i in range(6):  # Set up 6 platforms
         add_platform(cur_x, cur_y)
         goals[i+1] = [cur_x, cur_y]  # Put goal in the center of the platform
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         cur_x += dx
         cur_y = mid_y + dy
 
@@ -132,8 +132,8 @@ def set_terrain_hurdles(length, width, field_resolution, difficulty):
     for i in range(6):  # Set up 6 hurdles
         add_hurdle(cur_x, cur_y)
         goals[i+1] = [cur_x + m_to_idx(0.2), cur_y]  # Put goal after hurdle
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         cur_x += dx
         cur_y = mid_y + dy
 

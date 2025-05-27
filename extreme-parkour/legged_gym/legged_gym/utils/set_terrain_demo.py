@@ -101,7 +101,7 @@ def set_terrain(terrain, variation, difficulty):
     slope_depth = round(np.random.uniform(0.75, 0.85) / terrain.horizontal_scale)
     slope_width = round(1.0 / terrain.horizontal_scale)
     
-    platform_height = slope_height + np.random.randint(0, 0.2 / terrain.vertical_scale)
+    platform_height = slope_height + np.random.randint(0, max(0 + 1, 0.2 / terrain.vertical_scale))
 
     goals[5] = [platform_length+slope_depth/2, left_y]
     heights = np.tile(np.linspace(-slope_height, slope_height, slope_width), (slope_depth, 1)) * 1

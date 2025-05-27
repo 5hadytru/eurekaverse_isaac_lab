@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A sequence of angled ramps for quadruped stair/ramp ascent and descent skill."""
+    """A series of alternating (offset) wide low balance beams and narrow planks for precise foot placement—tests quadruped's dynamic walking and lateral stabilization."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,80 +11,86 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Parameters for ramps
-    # Ramp configuration scales with difficulty to increase the steepness and height
-    num_ramps = 4
-    # Ramp length: 1.8m ~ 1.0m as difficulty increases
-    ramp_length = np.linspace(1.8, 1.0, num=num_ramps) * (1 - 0.5 * difficulty)
-    # Ramp width: always wide, but shift slightly side-to-side
-    ramp_width = 1.2
-    min_side_margin = 0.4
-    mid_y = m_to_idx(width / 2)
-    ramp_width_idx = m_to_idx(ramp_width // 2)
-    ramp_spacing = 0.3 + 1.0 * difficulty  # flat in-between ramps
+    # Course Parameters
+    spawn_length = m_to_idx(2.0)  # Spawn area length (no obstacles)
+    n_obstacles = 6  # Six balance features between goals
+    course_length_idx = m_to_idx(length)
+    course_width_idx = m_to_idx(width)
+    mid_y = course_width_idx // 2
 
-    # Ramp ascent/descent height increases with difficulty
-    ramp_height = 0.12 + 0.23 * difficulty
-    flat_section_length = 0.7 - 0.2 * difficulty
-    flat_section_length = max(flat_section_length, 0.25)
+    # Obstacle types: wide beams (stable but require turning and precision), and narrow (precision planks)
+    # Wide beams—require balancing and some slight turning between them
+    beam_length_m = 1.8 - 0.6 * difficulty        # length along x
+    beam_width_m = 1.2 - 0.6 * difficulty         # width along y (gets thinner)
+    beam_height_m = 0.08 + 0.07 * difficulty      # elevated above ground
 
-    # Ensure start flat area for spawn
-    spawn_length = m_to_idx(2)
-    height_field[0:spawn_length, :] = 0
-    goals[0] = [m_to_idx(1.0), mid_y]
+    # Plank (narrow path) parameters—requires very careful balance
+    plank_length_m = 1.3 + 0.3 * difficulty
+    plank_width_m = 0.4 + 0.1 * (1 - difficulty)  # always at least 0.4m
+    plank_height_m = beam_height_m
+    gap_length_m = 0.20 + 0.45 * difficulty       # gaps between obstacle features
 
+    # Ground outside beams/planks is lowered to -0.9—forcing the quadruped to stay on track!
+    height_field[spawn_length:, :] = -0.9
+
+    # Initialize x-position
     cur_x = spawn_length
-    ramp_directions = [1, -1] * (num_ramps // 2)  # Alternate up and down
-    y_shift_options = [-0.2, 0.0, 0.2]
+    goal_idx = 0
 
-    for i in range(num_ramps):
-        # Ramp placement
-        r_len = m_to_idx(ramp_length[i])
-        f_len = m_to_idx(flat_section_length)
-        y_shift = m_to_idx(random.choice(y_shift_options))
-        y_mid = int(np.clip(mid_y + y_shift, m_to_idx(min_side_margin), m_to_idx(width) - m_to_idx(min_side_margin)))
+    # Place initial goal at the end of spawn zone, in the middle
+    goals[goal_idx] = [cur_x, mid_y]
+    goal_idx += 1
 
-        # Ramp indices
-        x1 = cur_x
-        x2 = x1 + r_len
-        y1 = y_mid - ramp_width_idx
-        y2 = y_mid + ramp_width_idx
-        y1 = max(y1, 0)
-        y2 = min(y2, m_to_idx(width))
+    # Alternate beam and plank; also alternate beam offset to left/right for turning
+    for obs in range(n_obstacles):
+        if obs % 2 == 0:  # Wide balance beam
+            l = m_to_idx(beam_length_m)
+            w = m_to_idx(beam_width_m)
+            h = beam_height_m
 
-        # Ramp direction: up or down
-        dir = ramp_directions[i]
-        start_h = np.max(height_field[x1-1, y1:y2]) if x1 > 0 else 0.0
-        end_h = start_h + ramp_height * dir
+            x1, x2 = cur_x, cur_x + l
+            # Alternate side offset for balance beams
+            y_offset = m_to_idx(0.5) if (obs//2) % 2 == 0 else -m_to_idx(0.5)
+            beam_cy = mid_y + y_offset
+            y1 = max(0, beam_cy - w//2)
+            y2 = min(course_width_idx, beam_cy + w//2)
 
-        # Create ramp: linear slope along x
-        for x in range(x1, x2):
-            t = (x - x1) / max(1, r_len - 1)
-            height_field[x, y1:y2] = (1-t)*start_h + t*end_h
+            height_field[x1:x2, y1:y2] = h
+            
+            # Set goal at the end-center of the beam
+            goals[goal_idx] = [x2 - m_to_idx(0.25), beam_cy]
+            goal_idx += 1
+            cur_x += l
 
-        # Flat section at top/bottom
-        x_flat1 = x2
-        x_flat2 = x_flat1 + f_len
-        height_field[x_flat1:x_flat2, y1:y2] = end_h
+        else:  # Narrow plank
+            l = m_to_idx(plank_length_m)
+            w = m_to_idx(plank_width_m)
+            h = plank_height_m
 
-        # Place goal at middle of each flat section
-        goal_x = int(x_flat1 + (x_flat2 - x_flat1)//2)
-        if i+1 < 8:
-            goals[i+1] = [goal_x, y_mid]
+            x1, x2 = cur_x, cur_x + l
+            # Place plank at center, but scatter a little up or down to add variety
+            side_nudge = m_to_idx(0.25) * (-1 if random.random() > 0.5 else 1)
+            plank_cy = mid_y + side_nudge
+            y1 = max(0, plank_cy - w//2)
+            y2 = min(course_width_idx, plank_cy + w//2)
 
-        # Update for next ramp
-        cur_x = x_flat2 + m_to_idx(ramp_spacing)
+            height_field[x1:x2, y1:y2] = h
+            # Set goal at end-center of the plank
+            goals[goal_idx] = [x2 - m_to_idx(0.15), plank_cy]
+            goal_idx += 1
+            cur_x += l
 
-    # Final goal at end of last flat
-    final_goal_x = min(cur_x, height_field.shape[0]-1)
-    goals[7] = [final_goal_x, mid_y]
+        # Add a gap (pit) after every feature (except after the last one)
+        if obs < n_obstacles - 1:
+            cur_x += m_to_idx(gap_length_m)
 
-    # Clean up goal indices to stay in bounds
-    goals = np.clip(goals, [0,0], [height_field.shape[0]-1, height_field.shape[1]-1])
+    # Make sure last goal is at a safe exit spot (flat ground)
+    flat_exit_len = m_to_idx(1.0)
+    height_field[cur_x:cur_x+flat_exit_len, :] = 0
+    goals[7] = [min(course_length_idx-2, cur_x + flat_exit_len//2), mid_y]
 
-    # Fill any remaining flat region to the end with last height value
-    if cur_x < height_field.shape[0]:
-        last_height = np.mean(height_field[cur_x-1, :])
-        height_field[cur_x:, :] = last_height
+    # If not all 8 goals filled (can happen at low difficulty), duplicate last
+    for k in range(goal_idx, 8):
+        goals[k] = goals[goal_idx-1]
 
     return height_field, goals

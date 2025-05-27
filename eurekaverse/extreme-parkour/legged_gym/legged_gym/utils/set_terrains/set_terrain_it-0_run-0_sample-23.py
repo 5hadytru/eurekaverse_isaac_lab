@@ -42,8 +42,8 @@ def set_terrain(length, width, field_resolution, difficulty):
 
     cur_x = spawn_length
     for i in range(6):  # Set up 6 beams
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         add_beam(cur_x, cur_x + beam_length + dx, mid_y + dy)
 
         # Put goal in the center of the beam

@@ -598,7 +598,7 @@ def set_terrain_stepping_stones_flat(length, width, field_resolution, difficulty
             goal_indices.append(2 * i + 1)
 
     for i in range(12):  # Set up 12 platforms
-        dy = np.random.randint(dy_min, dy_max)
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         # Flip between left and right
         direction *= -1
         add_stone(cur_x, cur_x + platform_length, mid_y + direction * dy)
@@ -680,7 +680,7 @@ def set_terrain_stepping_stones_cylinder(length, width, field_resolution, diffic
     direction = 1
     cur_y = mid_y
     for i in range(12):  # Set up 12 platforms
-        dy = np.random.randint(dy_min, dy_max)
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         # Flip between left and right
         direction *= -1
         draw_cylinder(cur_x + radius / 2, cur_y + direction * dy)
@@ -1163,7 +1163,7 @@ def set_terrain_squeeze(length, width, field_resolution, difficulty):
     for i in range(6):  # Set up 6 platforms
         dx = np.random.uniform(dx_min, dx_max)
         dy = np.random.uniform(dy_min, dy_max)
-        squeeze_width = np.random.randint(squeeze_width_min, squeeze_width_max) - i * squeeze_change
+        squeeze_width = np.random.randint(squeeze_width_min, max(squeeze_width_min + 1, squeeze_width_max)) - i * squeeze_change
         add_platform(cur_x, int(cur_x + platform_length + dx), int(mid_y + dy + platform_width // 2 + squeeze_width // 2))
         add_platform(cur_x, int(cur_x + platform_length + dx), int(mid_y + dy - platform_width // 2 - squeeze_width // 2))
 
@@ -1475,9 +1475,9 @@ def set_terrain_bump_jump(length, width, field_resolution, difficulty):
     height_field[spawn_length:, :] = -1.0
 
     for i in range(6):
-        # dx = np.random.randint(dx_min, dx_max)
+        # dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
         dx = 0
-        dy = np.random.randint(dy_min, dy_max)
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         bump_radius = np.random.uniform(bump_radius_min, bump_radius_max)
         bump_height = np.random.uniform(bump_height_min, bump_height_max)
         lip_radius = np.random.uniform(lip_radius_min, lip_radius_max)
@@ -1553,8 +1553,8 @@ def set_terrain_bump_jump(length, width, field_resolution, difficulty):
 #     flat_length_min, flat_length_max = m_to_idx(flat_length_min), m_to_idx(flat_length_max)
 #     cur_x = spawn_length
 #     for i in range(6):  # Set up 6 platforms
-#         dx = np.random.randint(dx_min, dx_max)
-#         dy = np.random.randint(dy_min, dy_max)
+#         dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+#         dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
 #         flat_length = np.random.uniform(flat_length_min, flat_length_max)
 #         max_platform_height = np.random.uniform(platform_height_min, platform_height_max)
 #         add_forward_ramp(cur_x, cur_x + platform_length + dx, mid_y + dy, max_platform_height)

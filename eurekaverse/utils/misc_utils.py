@@ -124,58 +124,60 @@ def run_subprocess(command: str, log_file: Path | str | None):
 # ────────────────────────────────────────────────────────────────
 # Wait for success/failure strings, premature exit, or timeout
 # ────────────────────────────────────────────────────────────────
-def wait_subprocess(
-        process: subprocess.Popen,
-        log_file: Path | str | None,
-        success_log: str,
-        failure_log: str,
-        timeout: int = 60):
+def wait_subprocess(process, log_file, success_log, failure_log, timeout=60):
     """
+    Monitor subprocess completion by checking for success/failure patterns.
+    
+    For PIPE mode: reads from process.stdout
+    For file mode: efficiently tails the log file
+    
     Returns (success_found, timed_out).
-
-    * Streams every line to the caller.
-    * Mirrors the same line into *log_file* when supplied.
-    * If the child dies early or times out, prints / appends any residual
-      output so you can see the traceback or Bash error.
     """
     deadline = time.time() + timeout
-    mirror = None
-    if log_file is not None:
-        mirror = open(log_file, "a")
-
-    try:
-        while True:
-            line = process.stdout.readline() if process.stdout else ""
-            if line:
-                if mirror:
-                    mirror.write(line)
-                    mirror.flush()
-                else:
-                    print(line, end="")
-
-                if success_log in line:
+    file_position = 0  # Track where we've read up to in the log file
+    
+    while True:
+        if log_file is None:
+            # PIPE mode - read from process stdout
+            output = process.stdout.readline() if process.stdout else ""
+            if output:
+                if success_log in output:
                     return True, False
-                if failure_log in line:
-                    _drain_and_dump(process, mirror)
+                if failure_log in output:
                     return False, False
+        else:
+            # File mode - efficiently tail the log file
+            try:
+                with open(log_file, 'r') as f:
+                    f.seek(file_position)  # Start reading from where we left off
+                    new_content = f.read()
+                    file_position = f.tell()  # Update position for next read
+                    
+                    if new_content:
+                        if success_log in new_content:
+                            return True, False
+                        if failure_log in new_content:
+                            return False, False
+            except FileNotFoundError:
+                # Log file doesn't exist yet, continue waiting
+                pass
+            except IOError:
+                # File might be locked by subprocess, continue waiting
+                pass
 
-            # Check exit status
-            if (retcode := process.poll()) is not None:
-                if retcode != 0:
-                    logging.warning(f"Process exited with code {retcode}")
-                _drain_and_dump(process, mirror)
-                return False, False
+        # Check if process has terminated
+        retcode = process.poll()
+        if retcode is not None:
+            if retcode != 0:
+                logging.warning(f"Process terminated with code {retcode}")
+            return False, False
+        
+        # Check timeout
+        if time.time() > deadline:
+            logging.warning("wait_subprocess(): timeout")
+            return False, True
 
-            if time.time() > deadline:
-                logging.warning("wait_subprocess(): timeout")
-                _drain_and_dump(process, mirror)
-                return False, True
-
-            time.sleep(0.2)
-    finally:
-        if mirror:
-            mirror.close()
-
+        time.sleep(0.2)  # More responsive than 1 second
 
 # ────────────────────────────────────────────────────────────────
 # Helper: grab what’s left in the pipe after exit / timeout

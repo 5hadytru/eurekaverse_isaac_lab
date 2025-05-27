@@ -43,8 +43,8 @@ def set_terrain(length, width, field_resolution, difficulty):
 
     cur_x = spawn_length
     for i in range(4):  # Set up 4 ramps
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         ramp_orientation = 'up' if i % 2 == 0 else 'down'
         add_ramp(cur_x, cur_x + ramp_length + dx, mid_y + dy, orientation=ramp_orientation)
 
@@ -67,8 +67,8 @@ def set_terrain(length, width, field_resolution, difficulty):
         height_field[x1:x2, y1:y2] = platform_height
 
     for i in range(3):  # Set up 3 platforms
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         add_platform(cur_x, cur_x + platform_length + dx, mid_y + dy)
 
         # Put goal at the center of each platform

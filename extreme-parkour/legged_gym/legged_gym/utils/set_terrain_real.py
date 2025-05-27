@@ -59,5 +59,5 @@ def set_terrain_course(length, width, field_resolution, difficulty):
 
     goals[:, 0] = np.linspace(start_x, start_x + m_to_idx(0.5), 8)
     goals[:, 1] = m_to_idx(width) // 2
-    # goals[:, 1] += np.random.randint(m_to_idx(-1.0), m_to_idx(1.0), size=(8))
+    # goals[:, 1] += np.random.randint(m_to_idx(-1.0), max(m_to_idx(-1.0) + 1, m_to_idx(1.0)), size=(8))
     return height_field, goals

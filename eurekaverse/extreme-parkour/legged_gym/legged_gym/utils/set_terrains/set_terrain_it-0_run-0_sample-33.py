@@ -39,7 +39,7 @@ def set_terrain(length, width, field_resolution, difficulty):
         # Randomly decide y-offset for beam placement, making sure they don't overlap significantly
         dy_min, dy_max = -0.4, 0.4
         dy_min, dy_max = m_to_idx(dy_min), m_to_idx(dy_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         
         add_beam(cur_x, cur_x + beam_length, mid_y + dy, beam_width, beam_height)
 

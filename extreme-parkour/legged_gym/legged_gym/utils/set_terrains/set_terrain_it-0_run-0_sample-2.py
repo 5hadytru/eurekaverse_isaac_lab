@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Stepping stone 'log balance beam' course: Robot must traverse a sequence of long, narrow, slightly wobbly beams, with gaps in between that increase in length and narrowness at higher difficulty."""
+    """A sequence of 'stair step' ledges: robot must climb up or down ledges, each stretching across the width."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,74 +11,96 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Parameters for the beams (balance logs)
-    # Beam settings scale with difficulty
-    min_beam_width = 1.1 - 0.5 * difficulty  # [1.1, 0.6] m, always > quadruped width, but becomes more challenging
-    max_beam_width = 1.5 - 0.5 * difficulty  # widest beams first
-    min_beam_length = 1.8 - 0.7 * difficulty  # [1.8, 1.1] m
-    max_beam_length = 2.6 - 1.0 * difficulty  # [2.6, 1.6] m
-    beam_height = 0.08 + 0.20 * difficulty    # [0.08, 0.28] m
+    # Parameters
+    num_steps = 6  # six steps/ledges
+    min_step_w = 1.0  # minimum ledge width, in meters
+    max_step_w = 1.65  # maximum, keep a bit under 1/6th the course
+    # Ledge widths and heights vary by difficulty
+    base_step_w = np.linspace(min_step_w, max_step_w, num_steps) * (1 - 0.4 * difficulty)
+    base_step_w = np.clip(base_step_w, min_step_w, max_step_w)
+    step_gap = 0.5 + 0.7 * difficulty  # meters: distance between ledges
+    step_gap_idx = m_to_idx(step_gap)
+    ledge_height_min = 0.06 + 0.15 * difficulty  # meters, lowest ledge height
+    ledge_height_max = 0.20 + 0.35 * difficulty  # meters, highest ledge height
+    
+    # Randomly decide if stairs go up, down, or alternate direction based on difficulty
+    stair_type = random.choices(
+        ['up', 'down', 'alternating', 'random'], 
+        weights=[0.3, 0.3, 0.25, 0.15] if difficulty > 0.2 else [0.6, 0.3, 0.1, 0.0],
+        k=1
+    )[0]
 
-    # Gaps between beams become wider/harder
-    min_gap = 0.15 + 0.25 * difficulty   # [0.15, 0.4] m
-    max_gap = 0.35 + 0.45 * difficulty   # [0.35, 0.8] m
+    # Setup: spawn area
+    spawn_x0 = 0
+    spawn_x1 = m_to_idx(2.0)
+    height_field[spawn_x0:spawn_x1, :] = 0
+    mid_y = m_to_idx(width / 2)  # centerline
 
-    field_x, field_y = m_to_idx(length), m_to_idx(width)
-    mid_y = field_y // 2
-    spawn_length = m_to_idx(2)
+    # Place initial goal at spawn
+    goals[0] = [spawn_x1 - m_to_idx(0.5), mid_y]
 
-    # Start with safe flat area for spawn
-    height_field[:spawn_length, :] = 0
-    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]  # first goal, just ahead of spawn
+    # Begin ledge sequence after spawn area
+    cur_x = spawn_x1
 
-    # The region after spawn area is shallow "pit" (low or slightly negative, hard to walk, encourages beam usage)
-    height_field[spawn_length:, :] = -0.15 - difficulty * 0.35
+    # Track running elevation for each ledge
+    elevation = 0.0
+    elevation_dir = 1 if stair_type == 'up' else -1  # Up stairs or down stairs
+    alternating = (stair_type == 'alternating')
 
-    # Helper to add a beam as a raised platform
-    def add_beam(x0, x1, y_center, beam_w, h):
-        y0 = int(max(0, y_center - beam_w // 2))
-        y1 = int(min(field_y, y_center + beam_w // 2))
-        height_field[x0:x1, y0:y1] = h
+    for step_id in range(num_steps):
+        step_width = base_step_w[step_id]
+        step_w_idx = m_to_idx(step_width)
 
-    # Course: sequence of 6 stepped beams each with a goal on/after
-    cur_x = int(spawn_length)
-    used_beams = []
+        # Ledges always run fully across width (1m+ required)
+        x0 = int(cur_x)
+        x1 = int(cur_x + step_w_idx)
+        y0 = 0
+        y1 = m_to_idx(width)
 
-    for i in range(1, 7):  # 6 beams/obstacles
-        l = m_to_idx(np.random.uniform(min_beam_length, max_beam_length))
-        w = m_to_idx(np.random.uniform(min_beam_width, max_beam_width))
-        if w < m_to_idx(0.4):  # don't allow too narrow for balance beam
-            w = m_to_idx(0.4)
-        h = beam_height + np.random.uniform(-0.01, 0.03)  # add tiny random "wobble" in beam height
-        y_shift = int(random.uniform(-field_y // 4 * 0.5 * difficulty, field_y // 4 * 0.5 * difficulty))  # mild zig-zag at higher difficulty
-        beam_center_y = mid_y + y_shift
+        # Determine how high this ledge is compared to previous
+        # Alternate/Random stairs can switch direction, otherwise monotonic
+        if alternating and (step_id % 2 == 1):
+            elevation_dir *= -1
+        elif stair_type == 'random' and (random.random() < 0.3 + 0.55*difficulty):
+            elevation_dir *= -1
 
-        # Place beam (make sure it's within bounds)
-        x0, x1 = int(cur_x), int(min(cur_x + l, field_x - 2))
-        add_beam(x0, x1, beam_center_y, w, h)
-        used_beams.append((x0, x1, beam_center_y, w, h))
+        if elevation_dir > 0:
+            ledge_height = random.uniform(ledge_height_min, ledge_height_max)
+        else:
+            ledge_height = -random.uniform(ledge_height_min, ledge_height_max)
 
-        # Place ith goal around 2/3rds of beam's x, center y
-        bx_center = int(x0 + 0.66 * (x1 - x0))
-        goals[i] = [bx_center, beam_center_y]
+        # For each ledge, add height to previous elevation, but clamp total elevation
+        next_elevation = elevation + ledge_height
+        max_elevation = 0.50 + 0.28 * difficulty
+        min_elevation = -0.20 if difficulty > 0.15 else -0.07
+        next_elevation = np.clip(next_elevation, min_elevation, max_elevation)
+        ledge_height = next_elevation - elevation  # adjust actual step height
 
-        # Gap to next beam
-        gap = m_to_idx(np.random.uniform(min_gap, max_gap))
-        cur_x = int(x1 + gap)
-        if cur_x >= field_x - m_to_idx(1.0):
-            break
+        elevation = next_elevation
 
-    # Final goal: put it at course end straight after last beam, on flat ground
-    final_goal_x = min(field_x - m_to_idx(1), cur_x + m_to_idx(0.6))
-    goals[7] = [final_goal_x, mid_y]
+        # Set ledge
+        height_field[x0:x1, y0:y1] = elevation
 
-    # Fill out any unused goals (for e.g. if the ends up < 8 beams)
-    for idx in range(1, 7):
-        if np.all(goals[idx] == 0):
-            # Default to somewhere after spawn
-            goals[idx] = [spawn_length + m_to_idx(2.0 * idx), mid_y]
+        # Place gap after this ledge (unless final)
+        gap_x0 = x1
+        gap_x1 = int(x1 + step_gap_idx)
+        if step_id < num_steps - 1:
+            # Height in gap is either baseline or minimum previous height
+            gap_height = min(0, elevation)  # allow step down, but no pit
+            height_field[gap_x0:gap_x1, y0:y1] = gap_height
+        cur_x = gap_x1
 
-    # Restore last area to be flat (for final goal)
-    height_field[final_goal_x:, :] = 0
+        # Place goal at center of each ledge
+        if step_id < 7:  # up to 8 goals spaced out
+            goal_x = (x0 + x1) // 2
+            goals[step_id + 1] = [goal_x, mid_y]
+
+    # Final approach to end
+    x_end = m_to_idx(length)
+    if cur_x < x_end:
+        # Flat ground at last elevation for rest of course
+        height_field[cur_x:x_end, :] = elevation
+        # Final goal at end
+        goals[-1] = [x_end - m_to_idx(0.5), mid_y]
 
     return height_field, goals

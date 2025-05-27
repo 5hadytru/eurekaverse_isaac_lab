@@ -116,8 +116,8 @@ def set_terrain_1(length, width, field_resolution, difficulty):
 
     cur_x = spawn_length
     for i in range(6):  # Add 6 beams
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         add_beam(cur_x, cur_x + beam_length_idx + dx, mid_y + dy)
 
         # Put goal in the center of the beam
@@ -177,8 +177,8 @@ def set_terrain_2(length, width, field_resolution, difficulty):
 
     cur_x = spawn_length
     for i in range(6):  # Set up 6 stepping stones in a straight line with gaps
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         stone_height = np.random.uniform(stone_height_min, stone_height_max)
         add_stone(cur_x + dx, mid_y + dy, stone_length, stone_width, stone_height)
 
@@ -299,7 +299,7 @@ def set_terrain_4(length, width, field_resolution, difficulty):
         goals[i + 1] = [cur_x + m_to_idx(0.2), mid_y]
         
         # Calculate the gap for the next hurdle based on minimum and maximum gap lengths
-        gap_length = np.random.randint(gap_length_min, gap_length_max)
+        gap_length = np.random.randint(gap_length_min, max(gap_length_min + 1, gap_length_max))
         cur_x += hurdle_length_quant + gap_length
 
     return height_field, goals
@@ -481,8 +481,8 @@ def set_terrain_7(length, width, field_resolution, difficulty):
 
     cur_x = spawn_length
     for i in range(6):  # Set up 6 bridges
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         add_bridge(cur_x, cur_x + bridge_length + dx, mid_y + dy)
 
         # Put goal in the center of the bridge
@@ -536,10 +536,10 @@ def set_terrain_8(length, width, field_resolution, difficulty):
     dy_min, dy_max = m_to_idx(dy_min), m_to_idx(dy_max)
 
     for i in range(7):  # Create 7 path segments for the robot to navigate
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         path_length = dx
-        path_width = np.random.randint(m_to_idx(path_width_min), m_to_idx(path_width_max))
+        path_width = np.random.randint(m_to_idx(path_width_min), max(m_to_idx(path_width_min) + 1, m_to_idx(path_width_max)))
         path_height = np.random.uniform(path_height_min, path_height_max)
 
         add_path_segment(cur_x, cur_x + path_length, path_width, path_height, mid_y + dy)
@@ -708,8 +708,8 @@ def set_terrain_1(length, width, field_resolution, difficulty):
 
     cur_x = spawn_length
     for i in range(6):  # Add 6 beams
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         add_beam(cur_x, cur_x + beam_length_idx + dx, mid_y + dy)
 
         # Put goal in the center of the beam
@@ -769,8 +769,8 @@ def set_terrain_2(length, width, field_resolution, difficulty):
 
     cur_x = spawn_length
     for i in range(6):  # Set up 6 stepping stones in a straight line with gaps
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         stone_height = np.random.uniform(stone_height_min, stone_height_max)
         add_stone(cur_x + dx, mid_y + dy, stone_length, stone_width, stone_height)
 
@@ -891,7 +891,7 @@ def set_terrain_4(length, width, field_resolution, difficulty):
         goals[i + 1] = [cur_x + m_to_idx(0.2), mid_y]
         
         # Calculate the gap for the next hurdle based on minimum and maximum gap lengths
-        gap_length = np.random.randint(gap_length_min, gap_length_max)
+        gap_length = np.random.randint(gap_length_min, max(gap_length_min + 1, gap_length_max))
         cur_x += hurdle_length_quant + gap_length
 
     return height_field, goals
@@ -1073,8 +1073,8 @@ def set_terrain_7(length, width, field_resolution, difficulty):
 
     cur_x = spawn_length
     for i in range(6):  # Set up 6 bridges
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         add_bridge(cur_x, cur_x + bridge_length + dx, mid_y + dy)
 
         # Put goal in the center of the bridge
@@ -1128,10 +1128,10 @@ def set_terrain_8(length, width, field_resolution, difficulty):
     dy_min, dy_max = m_to_idx(dy_min), m_to_idx(dy_max)
 
     for i in range(7):  # Create 7 path segments for the robot to navigate
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         path_length = dx
-        path_width = np.random.randint(m_to_idx(path_width_min), m_to_idx(path_width_max))
+        path_width = np.random.randint(m_to_idx(path_width_min), max(m_to_idx(path_width_min) + 1, m_to_idx(path_width_max)))
         path_height = np.random.uniform(path_height_min, path_height_max)
 
         add_path_segment(cur_x, cur_x + path_length, path_width, path_height, mid_y + dy)
@@ -1192,7 +1192,7 @@ def set_terrain_9(length, width, field_resolution, difficulty):
         goals[i+1] = [cur_x + hurdle_length + m_to_idx(0.2), mid_y]
 
         # Add spacing between hurdles
-        cur_x += hurdle_length + np.random.randint(dx_min, dx_max)
+        cur_x += hurdle_length + np.random.randint(dx_min, max(dx_min + 1, dx_max))
 
     # Add the final goal at the end of the terrain
     final_gap = m_to_idx(0.5)
@@ -1212,7 +1212,7 @@ def set_terrain_9(length, width, field_resolution, difficulty):
         goals[i+1] = [cur_x + hurdle_length + m_to_idx(0.2), mid_y]
 
         # Add spacing between hurdles
-        cur_x += hurdle_length + np.random.randint(dx_min, dx_max)
+        cur_x += hurdle_length + np.random.randint(dx_min, max(dx_min + 1, dx_max))
 
     # Add the final goal at the end of the terrain
     final_gap = m_to_idx(0.5)

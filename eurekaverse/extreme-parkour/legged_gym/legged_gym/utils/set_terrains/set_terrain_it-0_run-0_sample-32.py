@@ -46,8 +46,8 @@ def set_terrain(length, width, field_resolution, difficulty):
 
     cur_x = spawn_length
     for i in range(6):  # Alternate between beams and platforms
-        dx = np.random.randint(dx_min, dx_max)
-        dy = np.random.randint(dy_min, dy_max)
+        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
         if i % 2 == 0:  # Add beam
             beam_height = 0.1 + 0.2 * difficulty
             add_beam(cur_x, cur_x + beam_length + dx, mid_y + dy, beam_height)
@@ -60,8 +60,8 @@ def set_terrain(length, width, field_resolution, difficulty):
             cur_x += platform_length + dx
 
     # Add the final balance beam to fill in the remaining space
-    dx = np.random.randint(dx_min, dx_max)
-    dy = np.random.randint(dy_min, dy_max)
+    dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
+    dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
     beam_height = 0.1 + 0.2 * difficulty
     add_beam(cur_x, cur_x + beam_length + dx, mid_y + dy, beam_height)
     goals[-1] = [cur_x + (beam_length + dx) / 2, mid_y + dy]

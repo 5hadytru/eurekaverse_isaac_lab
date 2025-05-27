@@ -31,7 +31,7 @@ def set_terrain_random(length, width, field_resolution, difficulty):
     dy_min, dy_max = m_to_idx(dy_min), m_to_idx(dy_max)
 
     def add_ramp(start_x, end_x, mid_y):
-        platform_width = np.random.randint(platform_width_min, platform_width_max)
+        platform_width = np.random.randint(platform_width_min, max(platform_width_min + 1, platform_width_max))
         half_width = platform_width // 2
         x1, x2 = start_x, end_x
         y1, y2 = mid_y - half_width, mid_y + half_width
@@ -41,7 +41,7 @@ def set_terrain_random(length, width, field_resolution, difficulty):
             height_field[x1 + delta, y1:y2] = start_height + max_platform_height * (delta/(x2-x1))
 
     def add_platform(start_x, end_x, mid_y):
-        platform_width = np.random.randint(platform_width_min, platform_width_max)
+        platform_width = np.random.randint(platform_width_min, max(platform_width_min + 1, platform_width_max))
         half_width = platform_width // 2
         x1, x2 = int(start_x), int(end_x)
         y1, y2 = int(mid_y - half_width), int(mid_y + half_width)
@@ -60,8 +60,8 @@ def set_terrain_random(length, width, field_resolution, difficulty):
     cur_x = spawn_length
 
     for i in range(6):  # Set up 6 platforms
-        dy = np.random.randint(dy_min, dy_max)
-        platform_length = np.random.randint(platform_length_min, platform_length_max)
+        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
+        platform_length = np.random.randint(platform_length_min, max(platform_length_min + 1, platform_length_max))
         if i % 2 == 0:
             add_ramp(cur_x, int(cur_x + platform_length), int(mid_y + dy))
         else: 
@@ -70,7 +70,7 @@ def set_terrain_random(length, width, field_resolution, difficulty):
         goals[i+1] = [cur_x + (platform_length) / 2, mid_y + dy]
 
         # Add gap
-        gap_length = np.random.randint(gap_length_min, gap_length_max)
+        gap_length = np.random.randint(gap_length_min, max(gap_length_min + 1, gap_length_max))
         cur_x += int(platform_length + gap_length)
     # Add final goal behind the last platform, fill in the remaining gap
     goals[-1] = [cur_x + m_to_idx(0.5), mid_y]

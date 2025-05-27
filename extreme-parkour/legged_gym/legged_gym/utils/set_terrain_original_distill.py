@@ -122,16 +122,16 @@ def parkour_terrain(terrain,
     incline_height = round(incline_height / terrain.vertical_scale)
     last_incline_height = round(last_incline_height / terrain.vertical_scale)
 
-    dis_x = platform_len - np.random.randint(dis_x_min, dis_x_max) + stone_len // 2
+    dis_x = platform_len - np.random.randint(dis_x_min, max(dis_x_min + 1, dis_x_max)) + stone_len // 2
     goals[0] = [platform_len -  stone_len // 2, mid_y]
-    left_right_flag = np.random.randint(0, 2)
-    # dis_z = np.random.randint(dis_z_min, dis_z_max)
+    left_right_flag = np.random.randint(0, max(0 + 1, 2))
+    # dis_z = np.random.randint(dis_z_min, max(dis_z_min + 1, dis_z_max))
     dis_z = 0
     
     for i in range(num_stones):
-        dis_x += np.random.randint(dis_x_min, dis_x_max)
+        dis_x += np.random.randint(dis_x_min, max(dis_x_min + 1, dis_x_max))
         pos_neg = round(2*(left_right_flag - 0.5))
-        dis_y = mid_y + pos_neg * np.random.randint(dis_y_min, dis_y_max)
+        dis_y = mid_y + pos_neg * np.random.randint(dis_y_min, max(dis_y_min + 1, dis_y_max))
         if i == num_stones - 1:
             dis_x += last_stone_len // 4
             heights = np.tile(np.linspace(-last_incline_height, last_incline_height, stone_width), (last_stone_len, 1)) * pos_neg
@@ -143,7 +143,7 @@ def parkour_terrain(terrain,
         goals[i+1] = [dis_x, dis_y]
 
         left_right_flag = 1 - left_right_flag
-    final_dis_x = dis_x + 2*np.random.randint(dis_x_min, dis_x_max)
+    final_dis_x = dis_x + 2*np.random.randint(dis_x_min, max(dis_x_min + 1, dis_x_max))
     final_platform_start = dis_x + last_stone_len // 2 + round(0.05 // terrain.horizontal_scale)
     terrain.height_field_raw[final_platform_start:, :] = platform_height
     goals[-1] = [final_dis_x, mid_y]
@@ -191,11 +191,11 @@ def parkour_gap_terrain(terrain,
     goals[0] = [platform_len - 1, mid_y]
     last_dis_x = dis_x
     for i in range(num_gaps):
-        rand_x = np.random.randint(dis_x_min, dis_x_max)
+        rand_x = np.random.randint(dis_x_min, max(dis_x_min + 1, dis_x_max))
         dis_x += rand_x
-        rand_y = np.random.randint(dis_y_min, dis_y_max)
+        rand_y = np.random.randint(dis_y_min, max(dis_y_min + 1, dis_y_max))
         if not flat:
-            # terrain.height_field_raw[dis_x-stone_len//2:dis_x+stone_len//2, ] = np.random.randint(hurdle_height_min, hurdle_height_max)
+            # terrain.height_field_raw[dis_x-stone_len//2:dis_x+stone_len//2, ] = np.random.randint(hurdle_height_min, max(hurdle_height_min + 1, hurdle_height_max))
             # terrain.height_field_raw[dis_x-gap_size//2 : dis_x+gap_size//2, 
             #                          gap_center-half_gap_width:gap_center+half_gap_width] = gap_depth
             terrain.height_field_raw[dis_x-gap_size//2 : dis_x+gap_size//2, :] = gap_depth
@@ -205,7 +205,7 @@ def parkour_gap_terrain(terrain,
         
         last_dis_x = dis_x
         goals[i+1] = [dis_x-rand_x//2, mid_y + rand_y]
-    final_dis_x = dis_x + np.random.randint(dis_x_min, dis_x_max)
+    final_dis_x = dis_x + np.random.randint(dis_x_min, max(dis_x_min + 1, dis_x_max))
     # import ipdb; ipdb.set_trace()
     if final_dis_x > terrain.width:
         final_dis_x = terrain.width - 0.5 // terrain.horizontal_scale
@@ -254,16 +254,16 @@ def parkour_hurdle_terrain(terrain,
     goals[0] = [platform_len - 1, mid_y]
     last_dis_x = dis_x
     for i in range(num_stones):
-        rand_x = np.random.randint(dis_x_min, dis_x_max)
-        rand_y = np.random.randint(dis_y_min, dis_y_max)
+        rand_x = np.random.randint(dis_x_min, max(dis_x_min + 1, dis_x_max))
+        rand_y = np.random.randint(dis_y_min, max(dis_y_min + 1, dis_y_max))
         dis_x += rand_x
         if not flat:
-            terrain.height_field_raw[dis_x-stone_len//2:dis_x+stone_len//2, ] = np.random.randint(hurdle_height_min, hurdle_height_max)
+            terrain.height_field_raw[dis_x-stone_len//2:dis_x+stone_len//2, ] = np.random.randint(hurdle_height_min, max(hurdle_height_min + 1, hurdle_height_max))
             terrain.height_field_raw[dis_x-stone_len//2:dis_x+stone_len//2, :mid_y+rand_y-half_valid_width] = 0
             terrain.height_field_raw[dis_x-stone_len//2:dis_x+stone_len//2, mid_y+rand_y+half_valid_width:] = 0
         last_dis_x = dis_x
         goals[i+1] = [dis_x-rand_x//2, mid_y + rand_y]
-    final_dis_x = dis_x + np.random.randint(dis_x_min, dis_x_max)
+    final_dis_x = dis_x + np.random.randint(dis_x_min, max(dis_x_min + 1, dis_x_max))
     # import ipdb; ipdb.set_trace()
     if final_dis_x > terrain.width:
         final_dis_x = terrain.width - 0.5 // terrain.horizontal_scale
@@ -313,8 +313,8 @@ def parkour_step_terrain(terrain,
     stair_height = 0
     goals[0] = [platform_len - round(1 / terrain.horizontal_scale), mid_y]
     for i in range(num_stones):
-        rand_x = np.random.randint(dis_x_min, dis_x_max)
-        rand_y = np.random.randint(dis_y_min, dis_y_max)
+        rand_x = np.random.randint(dis_x_min, max(dis_x_min + 1, dis_x_max))
+        rand_y = np.random.randint(dis_y_min, max(dis_y_min + 1, dis_y_max))
         if i < num_stones // 2:
             stair_height += step_height
         elif i > num_stones // 2:
@@ -326,7 +326,7 @@ def parkour_step_terrain(terrain,
         
         last_dis_x = dis_x
         goals[i+1] = [dis_x-rand_x//2, mid_y+rand_y]
-    final_dis_x = dis_x + np.random.randint(dis_x_min, dis_x_max)
+    final_dis_x = dis_x + np.random.randint(dis_x_min, max(dis_x_min + 1, dis_x_max))
     # import ipdb; ipdb.set_trace()
     if final_dis_x > terrain.width:
         final_dis_x = terrain.width - 0.5 // terrain.horizontal_scale
@@ -396,7 +396,7 @@ def demo_terrain(terrain):
     slope_depth = round(np.random.uniform(0.75, 0.85) / terrain.horizontal_scale)
     slope_width = round(1.0 / terrain.horizontal_scale)
     
-    platform_height = slope_height + np.random.randint(0, 0.2 / terrain.vertical_scale)
+    platform_height = slope_height + np.random.randint(0, max(0 + 1, 0.2 / terrain.vertical_scale))
 
     goals[5] = [platform_length+slope_depth/2, left_y]
     heights = np.tile(np.linspace(-slope_height, slope_height, slope_width), (slope_depth, 1)) * 1

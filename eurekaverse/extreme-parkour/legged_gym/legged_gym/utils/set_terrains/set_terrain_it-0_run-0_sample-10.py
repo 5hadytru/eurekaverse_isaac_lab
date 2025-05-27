@@ -35,7 +35,7 @@ def set_terrain(length, width, field_resolution, difficulty):
     cur_x = spawn_length
     for i in range(7):  # Create 7 stepping stones
         cur_x += stone_size + m_to_idx(0.3)
-        dy_offset = np.random.randint(-m_to_idx(0.25), m_to_idx(0.25))  # Small random y offset for randomness
+        dy_offset = np.random.randint(-m_to_idx(0.25), max(-m_to_idx(0.25) + 1, m_to_idx(0.25)))  # Small random y offset for randomness
         stone_center_y = mid_y + dy_offset
         stone_height = np.random.uniform(stone_min_height, stone_max_height)
         

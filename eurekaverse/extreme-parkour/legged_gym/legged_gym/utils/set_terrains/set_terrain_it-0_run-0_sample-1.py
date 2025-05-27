@@ -37,7 +37,7 @@ def set_terrain(length, width, field_resolution, difficulty):
     cur_x = spawn_x_idx
 
     for i in range(7):  # Set up 7 bridges
-        bridge_length = np.random.randint(bridge_length_min, bridge_length_max)
+        bridge_length = np.random.randint(bridge_length_min, max(bridge_length_min + 1, bridge_length_max))
         offset_y = np.random.uniform(-1.0, 1.0)
         offset_y = m_to_idx(offset_y)
         
