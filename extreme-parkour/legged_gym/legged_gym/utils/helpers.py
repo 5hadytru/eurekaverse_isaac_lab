@@ -97,6 +97,11 @@ def update_cfg_from_args(env_cfg, cfg_train, args):
         if args.check_terrain_feasibility:
             env_cfg.terrain.check_feasibility = True
         
+        if hasattr(args, "video"):
+            env_cfg.video = args.video
+        else:
+            env_cfg.video = False
+
         if args.terrain_type == "simple": # flat
             env_cfg.commands.ranges.lin_vel_x = [0.0, 2.0]
         else: # parkour
