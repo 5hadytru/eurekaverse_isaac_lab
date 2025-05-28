@@ -304,3 +304,18 @@ class MultiCamVideo(gym.Wrapper):
         if term or trunc:
             for w in self.writers: w.close()
         return obs, r, term, trunc, info
+
+
+def add_camera_cfgs(terrain_types:list, difficulties:list, env_cfg):
+    """
+    Given a list of terrain types (integer IDs) and difficulties (integer IDs),
+    this function computes camera position and rotations then adds camera
+    configurations to the environment configuration.
+    """
+    assert len(terrain_types) == len(difficulties), "Terrain types and difficulties must have the same length."
+    cameras = {}
+
+    env_cfg.cameras = cameras
+
+    
+    

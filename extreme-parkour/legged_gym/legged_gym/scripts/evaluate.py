@@ -48,7 +48,7 @@ import copy
 from isaaclab.utils.dict import print_dict
 from isaaclab.app import AppLauncher
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.utils import task_registry, add_shared_args, MultiCamVideo
+from legged_gym.utils import task_registry, add_shared_args, MultiCamVideo, add_camera_cfgs
 from legged_gym.utils.helpers import get_checkpoint
 
 
@@ -89,12 +89,6 @@ app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
 from legged_gym.envs import *
-
-def add_camera_cfgs(env_cfg):
-    """
-    Based on 
-    """
-    pass
 
 def evaluate(args):
     faulthandler.enable()

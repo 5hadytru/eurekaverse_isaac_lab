@@ -591,15 +591,18 @@ class LeggedRobot(DirectRLEnv):
         if not self.cfg.video:
             return
         
+        cam_height, cam_width = 480, 640
+        update_period = 0.025 # 40 Hz
+
         # Iterate through camera configurations
         for camera_name, camera_cfg in self.cfg.cameras.items():
             # Create camera configuration
             cam_cfg = CameraCfg(
                 prim_path=f"/World/Cameras/{camera_name}",
-                update_period=camera_cfg.get('update_period', 0.1),  # Update at 10 Hz by default
-                height=camera_cfg.get('height', 480),
-                width=camera_cfg.get('width', 640),
-                data_types=camera_cfg.get('data_types', ['rgb', 'depth']),
+                update_period=update_period,
+                height=cam_height,
+                width=cam_width,
+                data_types=['rgb'],
                 spawn=sim_utils.PinholeCameraCfg(
                     focal_length=camera_cfg.get('focal_length', 24.0),
                     focus_distance=camera_cfg.get('focus_distance', 400.0),
@@ -620,7 +623,7 @@ class LeggedRobot(DirectRLEnv):
 
         tiled_cfg = TiledCameraCfg(prim_path="/World/Cameras/.*",
                            data_types=["rgb"],
-                           width=640, height=480)
+                           width=cam_width, height=cam_height)
         self.tcam = TiledCamera(tiled_cfg)
         self.scene.sensors["tiled_camera"] = self.tcam
 
