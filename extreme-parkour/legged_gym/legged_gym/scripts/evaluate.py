@@ -132,23 +132,12 @@ def evaluate(args):
         env_cfg.commands.ranges.lin_vel_y[0] = 0
 
     # prepare environment
-    env, _ = task_registry.make_env(args=args, name=args.task, env_cfg=env_cfg, render_mode="rgb_array" if args.video else None)
+    env, _ = task_registry.make_env(args=args, name=args.task, env_cfg=env_cfg, render_mode=None) #"rgb_array" if args.video else None)
 
     obs = env.get_observations()
     max_episode_length = env.max_episode_length
     device = env.device
     rew_term_keys = env.rew_term_sums.keys()
-
-    if args.video:
-        video_kwargs = {
-            "video_folder": os.path.join(load_dir, "eval_videos"),
-            "step_trigger": lambda step_id: step_id == 0,
-            "disable_logger": False,
-            "video_length": 1000
-        }
-        print("[INFO] Recording videos during training.")
-        print_dict(video_kwargs, nesting=4)
-        env = RecordVideo(env, **video_kwargs)
 
     total_steps = args.max_steps if (args.max_steps is not None and args.max_steps > 0) else 10 * int(max_episode_length)
 
@@ -292,7 +281,7 @@ def evaluate(args):
         cur_rew_sums = infos["rew_sums"]
         cur_reward_term_sums = infos["rew_term_sums"]
         cur_goal_idx = infos["cur_goal_idx"]
-        feet_at_edge = env.feet_at_edge.clone().float() if not args.video else env.env.feet_at_edge.clone().float()
+        feet_at_edge = env.feet_at_edge.clone().float()
         cur_episode_length += 1
         cur_time_from_start += 1
 
@@ -333,8 +322,8 @@ def evaluate(args):
     # config.yaml (it will be range(cfg.num_terrain_types))
     # there will be variations repeated if LeggedRobotCfg.terrain.num_cols > cfg.num_terrain_types
     # the range of difficulties will be range(LeggedRobotCfg.terrain.num_rows)
-    env_class = env.env_class if not args.video else env.env.env_class
-    terrain_levels = env.terrain_levels if not args.video else env.env.terrain_levels
+    env_class = env.env_class
+    terrain_levels = env.terrain_levels
     terrain_cells = set(zip(env_class.cpu().numpy().tolist(), terrain_levels.cpu().numpy().tolist()))
     mean_rew_per_cell_buffer, mean_rew_terms_per_cell_buffer, mean_len_per_cell_buffer, mean_goals_per_cell_buffer, mean_edge_violation_per_cell_buffer = {}, {}, {}, {}, {}
     mean_rew_terms_per_cell_buffer = {term: {} for term in rew_terms_sum_per_env.keys()}
