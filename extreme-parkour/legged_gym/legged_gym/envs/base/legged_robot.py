@@ -621,6 +621,8 @@ class LeggedRobot(DirectRLEnv):
             # Store camera instance
             self.scene.sensors[camera_name] = camera
 
+            print("Placed camera", camera_name, "at position", camera_cfg['position'], "with rotation", camera_cfg['rotation'])
+
         tiled_cfg = TiledCameraCfg(prim_path="/World/Cameras/.*",
                            data_types=["rgb"],
                            width=cam_width, height=cam_height)

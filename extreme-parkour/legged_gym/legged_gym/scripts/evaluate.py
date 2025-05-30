@@ -90,6 +90,83 @@ simulation_app = app_launcher.app
 
 from legged_gym.envs import *
 
+def get_camera_coords(col_idx, row_idx, env_cfg, cam_height=3.0):
+    """
+    Get camera position and rotation parameters for a specific terrain cell.
+    
+    Args:
+        col_idx: Column index in the terrain grid
+        row_idx: Row index in the terrain grid
+        env_cfg: Environment configuration containing terrain parameters
+        
+    Returns:
+        dict: Camera configuration with position and rotation
+    """
+    # Get environment dimensions
+    env_length = env_cfg.terrain.terrain_length
+    env_width = env_cfg.terrain.terrain_width
+    
+    # Calculate environment origin for this cell (from add_terrain_to_map method)
+    env_origin_x = row_idx * env_length + 1.0
+    env_origin_y = (col_idx + 0.5) * env_width
+    env_origin_z = 0  # Assuming origin_zero_z is True
+    
+    # Robot spawns at 2m from the start of the environment
+    robot_spawn_x = env_origin_x + 2.0
+    
+    # Camera positioning strategy:
+    # - Behind the robot (negative x offset)
+    # - Elevated to get a good view
+    # - Slightly angled down to see the terrain
+    
+    camera_config = {
+        # Position camera 3m behind spawn, 2m up, centered on y-axis
+        "position": [
+            robot_spawn_x - 3.0,  # Behind the robot
+            env_origin_y,         # Centered on the environment
+            env_origin_z + cam_height    # Elevated view
+        ],
+        # Rotation in euler angles (will need to convert to quaternion)
+        # Looking slightly down and forward
+        "rotation_euler": [0.0, -0.3, 0.0],  # pitch down by ~17 degrees
+        
+        # Camera intrinsics
+        "focal_length": 24.0,
+        "focus_distance": 400.0,
+        "horizontal_aperture": 20.955,
+        "clipping_range": (0.1, 1000.0)
+    }
+    
+    # Convert euler angles to quaternion for Isaac Sim
+    # Isaac Sim uses (w, x, y, z) quaternion format
+    from scipy.spatial.transform import Rotation as R
+    r = R.from_euler('xyz', camera_config["rotation_euler"])
+    quat = r.as_quat()  # Returns (x, y, z, w)
+    # Convert to Isaac Sim format (w, x, y, z)
+    camera_config["rotation"] = (quat[3], quat[0], quat[1], quat[2])
+    
+    return camera_config
+
+
+def add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name=None):
+    """
+    Add a camera configuration to the environment config for a specific terrain cell.
+    
+    Args:
+        env_cfg: Environment configuration
+        col_idx: Column index in the terrain grid
+        row_idx: Row index in the terrain grid
+        camera_name: Optional name for the camera (defaults to "cam_r{row}_c{col}")
+    """
+    if not hasattr(env_cfg, 'cameras'):
+        env_cfg.cameras = {}
+    
+    if camera_name is None:
+        camera_name = f"cam_r{row_idx}_c{col_idx}"
+    
+    camera_config = get_camera_coords(col_idx, row_idx, env_cfg)
+    env_cfg.cameras[camera_name] = camera_config
+
 def evaluate(args):
     faulthandler.enable()
 
