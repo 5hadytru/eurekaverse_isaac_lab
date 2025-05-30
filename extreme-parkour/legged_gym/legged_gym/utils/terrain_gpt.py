@@ -136,7 +136,7 @@ class Terrain:
                 difficulty = i / (self.cfg.num_rows-1) if self.cfg.num_rows > 1 else 0.5
                 variation = j / self.cfg.num_cols
                 terrain = self.make_terrain(variation, difficulty)
-
+                
                 # Pad borders
                 pad_width = int(0.1 // terrain.horizontal_scale)
                 pad_height = int(0.5 // terrain.vertical_scale)

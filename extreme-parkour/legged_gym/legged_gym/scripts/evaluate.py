@@ -48,7 +48,7 @@ import copy
 from isaaclab.utils.dict import print_dict
 from isaaclab.app import AppLauncher
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.utils import task_registry, add_shared_args, MultiCamVideo, add_camera_cfgs
+from legged_gym.utils import task_registry, add_shared_args, MultiCamVideo
 from legged_gym.utils.helpers import get_checkpoint
 
 
@@ -56,6 +56,7 @@ parser = argparse.ArgumentParser()
 add_shared_args(parser)
 
 parser.add_argument("--video", action="store_true", default=False, help="Record videos of agent")
+parser.add_argument("--num_terrain_types", type=int, help="Number of terrain types. Provided by run_eurekaverse.py and should match the number of set_terrain_fns in the generated set_terrain python file")
 
 parser.add_argument("--checkpoint", type=int, default=-1, help="Which model checkpoint to load. If -1, will load the last checkpoint.")
 parser.add_argument("--max_steps", type=int, help="Maximum number of evaluation steps")
@@ -186,7 +187,11 @@ def evaluate(args):
         _, train_cfg = task_registry.get_cfgs(name=args.task)
     
     # If number of environments is too small, increase it to fill up each grid cell (relevant for distillation)
-    env_cfg.scene.num_envs = max(env_cfg.scene.num_envs, env_cfg.terrain.num_rows * env_cfg.terrain.num_cols)
+    # env_cfg.scene.num_envs = max(env_cfg.scene.num_envs, env_cfg.terrain.num_rows * env_cfg.terrain.num_cols)
+
+    # single environment for each grid cell
+    env_cfg.scene.num_envs = env_cfg.terrain.num_rows * env_cfg.terrain.num_cols
+    assert args.num_envs is None, "Currently hard-coding num_envs to match number of terrain cells"
     env_cfg.depth.camera_num_envs = env_cfg.scene.num_envs
     
     # Don't resample commands during an episode
@@ -209,10 +214,17 @@ def evaluate(args):
         env_cfg.commands.ranges.lin_vel_y[0] = 0
 
     if args.video:
+        assert args.num_terrain_types is not None, "Must provide number of terrain types since cameras are evenly distributed among them"
+        assert env_cfg.terrain.num_cols % args.num_terrain_types == 0, f"Current camera setup requires equally represented variations (which won't happen here since there are assumedly 10 terrain types and {env_cfg.terrain.num_cols} columns)"
         print("[INFO] Recording videos during training.")
-        for difficulty in range(0, env_cfg.terrain.num_rows, 2):
-            for variation in range(env_cfg.terrain.num_cols):
-                add_camera_to_env_cfg(env_cfg, variation, difficulty, camera_name=f"cam_r{difficulty}_c{variation}")
+        camera_col_idxes = list(range(0, env_cfg.terrain.num_cols, env_cfg.terrain.num_cols // args.num_terrain_types))
+        camera_row_idxes = list(range(env_cfg.terrain.num_rows))
+        cam_count = 0
+        for col_idx in camera_col_idxes: # variation
+            for row_idx in camera_row_idxes: # difficulty; all difficulties for each variation
+                add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name=f"cam_r{col_idx}_c{row_idx}")
+                cam_count += 1
+        print(f"[INFO] Placed {cam_count} cameras")
 
     # prepare environment
     env, _ = task_registry.make_env(args=args, name=args.task, env_cfg=env_cfg, render_mode="rgb_array" if args.video else None)

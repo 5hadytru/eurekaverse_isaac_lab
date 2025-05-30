@@ -110,7 +110,7 @@ def run_evaluation(cfg, it, parallel_run_id, exptid, terrain):
         log_file.rename(f"{log_file}.old")
 
     gpu = get_freest_gpu() if not cfg.deterministic_gpu else f"cuda:{parallel_run_id % num_gpus}"
-    command = f"{python_prefix} -u {eval_script} --task {cfg.quadruped_model} --exptid {exptid} --device {gpu} --headless --max_steps {cfg.eval_steps} --metric_granularity type"
+    command = f"{python_prefix} -u {eval_script} --task {cfg.quadruped_model} --exptid {exptid} --device {gpu} --headless --max_steps {cfg.eval_steps} --num_terrain_types {cfg.num_terrain_types} --metric_granularity type"
     for k, v in cfg.terrain.items():
         command = command + f" --{k} {v}"
     if terrain == "pre_training" or terrain == "post_training":
