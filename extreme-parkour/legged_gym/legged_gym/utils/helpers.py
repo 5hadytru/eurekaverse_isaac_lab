@@ -89,7 +89,7 @@ def update_cfg_from_args(env_cfg, cfg_train, args):
         if args.device is not None:
             env_cfg.sim.device = args.device
         if args.num_envs is not None:
-            env_cfg.num_envs = args.num_envs
+            env_cfg.scene.num_envs = args.num_envs
         if args.seed is not None:
             env_cfg.seed = args.seed
         if args.terrain_type is not None:
