@@ -208,6 +208,12 @@ def evaluate(args):
         env_cfg.commands.ranges.lin_vel_x[0] = 0
         env_cfg.commands.ranges.lin_vel_y[0] = 0
 
+    if args.video:
+        print("[INFO] Recording videos during training.")
+        for difficulty in range(0, env_cfg.terrain.num_rows, 2):
+            for variation in range(env_cfg.terrain.num_cols):
+                add_camera_to_env_cfg(env_cfg, variation, difficulty, camera_name=f"cam_r{difficulty}_c{variation}")
+
     # prepare environment
     env, _ = task_registry.make_env(args=args, name=args.task, env_cfg=env_cfg, render_mode="rgb_array" if args.video else None)
 
@@ -217,7 +223,6 @@ def evaluate(args):
     rew_term_keys = env.rew_term_sums.keys()
 
     if args.video:
-        print("[INFO] Recording videos during training.")
         video_out_dir = os.path.join(load_dir, "eval_videos")
         env = MultiCamVideo(env, video_out_dir)
 

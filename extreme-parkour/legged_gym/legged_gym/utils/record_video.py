@@ -279,7 +279,7 @@ import os
 import gymnasium as gym
 
 class MultiCamVideo(gym.Wrapper):
-    def __init__(self, env, out_dir, fps=60, length=float("inf")):
+    def __init__(self, env, out_dir, fps=30, length=float("inf")):
         super().__init__(env)
         self.out_dir, self.fps = out_dir, fps
         self.len = int(length)
