@@ -9,14 +9,10 @@ class MultiCamVideo(gym.Wrapper):
         self.len = int(length)
         self.episode = 0
         os.makedirs(out_dir, exist_ok=True)
-
-    def reset_cameras(self, cam_ids):
-        obs, info = self.env.reset(*a, **kw)
         self.writers = [imageio.get_writer(f"{self.out_dir}/cam{i}_ep{self.episode}.mp4",
                                            fps=self.fps) 
                         for i in range(self.env.tcam.num_cameras)]
-        self.frame = 0; self.episode += 1
-        return obs, info
+        self.frame = 0
 
     def step(self, action):
         obs, r, term, trunc, info = self.env.step(action)
@@ -25,8 +21,7 @@ class MultiCamVideo(gym.Wrapper):
             for img, w in zip(imgs, self.writers):
                 w.append_data(img)
         self.frame += 1
-        if term or trunc:
-            for w in self.writers: w.close()
+        
         return obs, r, term, trunc, info
 
     
