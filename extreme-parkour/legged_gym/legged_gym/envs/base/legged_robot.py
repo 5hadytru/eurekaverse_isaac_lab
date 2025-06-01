@@ -36,8 +36,6 @@ import os
 
 from isaaclab.envs import DirectRLEnv
 import isaaclab.sim as sim_utils
-from isaaclab.sensors import Camera, CameraCfg
-from isaaclab.sensors import TiledCamera, TiledCameraCfg
 from isaaclab.assets.articulation import Articulation
 from isaaclab.utils.math import quat_rotate_inverse, quat_apply, quat_from_euler_xyz, quat_apply_yaw, wrap_to_pi
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
@@ -577,7 +575,6 @@ class LeggedRobot(DirectRLEnv):
         print("*"*80)
 
         self._init_robot()
-        self._add_cameras()
 
         # clone, filter, and replicate
         self.scene.clone_environments(copy_from_source=False)
@@ -585,49 +582,6 @@ class LeggedRobot(DirectRLEnv):
         # add lights
         light_cfg = sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
-
-    def _add_cameras(self):
-        """Add cameras to the scene based on configurations in self.cfg.cameras"""
-        if not self.cfg.video:
-            return
-        
-        cam_height, cam_width = 480, 640
-        update_period = 0.025 # 40 Hz
-
-        # Iterate through camera configurations
-        for camera_name, camera_cfg in self.cfg.cameras.items():
-            # Create camera configuration
-            cam_cfg = CameraCfg(
-                prim_path=f"/World/Cameras/{camera_name}",
-                update_period=update_period,
-                height=cam_height,
-                width=cam_width,
-                data_types=['rgb'],
-                spawn=sim_utils.PinholeCameraCfg(
-                    focal_length=camera_cfg.get('focal_length', 24.0),
-                    focus_distance=camera_cfg.get('focus_distance', 400.0),
-                    horizontal_aperture=camera_cfg.get('horizontal_aperture', 20.955),
-                    clipping_range=camera_cfg.get('clipping_range', (0.1, 1000.0)),
-                ),
-                offset=CameraCfg.OffsetCfg(
-                    pos=camera_cfg.get('position', (0.0, 0.0, 0.0)),
-                    rot=camera_cfg.get('rotation', (1.0, 0.0, 0.0, 0.0)),  # quaternion (w,x,y,z)
-                )
-            )
-            
-            # Create camera instance
-            camera = Camera(cam_cfg)
-            
-            # Store camera instance
-            self.scene.sensors[camera_name] = camera
-
-            print("Placed camera", camera_name, "at position", camera_cfg['position'], "with rotation", camera_cfg['rotation'])
-
-        tiled_cfg = TiledCameraCfg(prim_path="/World/Cameras/.*",
-                           data_types=["rgb"],
-                           width=cam_width, height=cam_height)
-        self.tcam = TiledCamera(tiled_cfg)
-        self.scene.sensors["tiled_camera"] = self.tcam
 
     #------------- Callbacks --------------
     def _post_physics_step_callback(self):

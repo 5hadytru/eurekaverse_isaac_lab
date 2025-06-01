@@ -3,26 +3,24 @@ import os
 import gymnasium as gym
 
 class MultiCamVideo(gym.Wrapper):
-    def __init__(self, env, out_dir, fps=30, length=float("inf")):
+    def __init__(self, env, out_dir, cam_names:list, fps=30, length=float("inf")):
         super().__init__(env)
         self.out_dir, self.fps = out_dir, fps
-        self.len = int(length)
+        self.len = length
         self.episode = 0
         os.makedirs(out_dir, exist_ok=True)
-        self.writers = [imageio.get_writer(f"{self.out_dir}/cam{i}_ep{self.episode}.mp4",
-                                           fps=self.fps) 
-                        for i in range(self.env.tcam.num_cameras)]
+        self.cam_names = cam_names
+        self.writers = {cam_name: imageio.get_writer(f"{self.out_dir}/{cam_name}.mp4", fps=self.fps)
+                        for cam_name in cam_names}
         self.frame = 0
 
     def step(self, action):
         obs, r, term, trunc, info = self.env.step(action)
         if self.frame < self.len:
-            imgs = self.env.tcam.data.output["rgb"]      # (N,H,W,3)
-            for img, w in zip(imgs, self.writers):
-                w.append_data(img)
+            for c in self.cam_names:
+                print(list(self.env.scene.sensors.keys()))
+                img = self.env.scene.sensors[c].data.output["rgb"]      # (H,W,3)
+                self.writers[c].append_data(img)
         self.frame += 1
         
         return obs, r, term, trunc, info
-
-    
-    
