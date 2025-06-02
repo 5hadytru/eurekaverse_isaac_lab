@@ -8,7 +8,7 @@ quadruped_model: "go1"                 # Robot model, "go1" or "a1"
 iterations: 7                          # Number of environment generation iterations
 train_iterations: 1500                 # Number of training iterations per generated environment
 eval_steps: 10001                      # Number of evaluation steps per environment (1001 is fairly accurate, 10001 is most accurate)
-num_terrain_types: 10                  # Number of terrains to generate
+num_terrain_types: 6                   # Number of terrains to generate
 num_parallel_runs: 1                   # Number of parallel training runs per iteration
 num_parallel_checks: 4                 # Number of parallel runs to query and check executability of GPT responses
 
@@ -31,11 +31,20 @@ hydra:
     chdir: True
 
 # terrain stuff (overwrites LeggedRobotCfg)
-terrain:
+terrain: # controls all training terrains (which are also used for eval)
   terrain_length: 18
   terrain_width: 4
   vertical_scale: 0.005
   horizontal_scale: 0.1
   num_cols: 6
   num_rows: 6
+  num_goals: 8
+
+terrain_benchmark: # controls benchmark terrain (which is only used for eval and would lead to OOM error if video is used); more cols to account for more set_terrain_fns
+  terrain_length: 18
+  terrain_width: 4
+  vertical_scale: 0.005
+  horizontal_scale: 0.1
+  num_cols: 20
+  num_rows: 8
   num_goals: 8
