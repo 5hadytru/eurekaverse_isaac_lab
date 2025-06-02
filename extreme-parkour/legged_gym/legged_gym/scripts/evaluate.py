@@ -94,6 +94,63 @@ from isaaclab.sensors import CameraCfg, TiledCameraCfg
 import isaaclab.sim as sim_utils
 
 
+# def get_camera_coords(col_idx, row_idx, env_cfg, cam_height=3.0):
+#     """
+#     Get camera position and rotation parameters for a specific terrain cell.
+    
+#     Args:
+#         col_idx: Column index in the terrain grid
+#         row_idx: Row index in the terrain grid
+#         env_cfg: Environment configuration containing terrain parameters
+        
+#     Returns:
+#         dict: Camera configuration with position and rotation
+#     """
+#     # Get environment dimensions
+#     env_length = env_cfg.terrain.terrain_length
+#     env_width = env_cfg.terrain.terrain_width
+    
+#     # Calculate environment origin for this cell (from add_terrain_to_map method)
+#     env_origin_x = row_idx * env_length + 1.0
+#     env_origin_y = (col_idx + 0.5) * env_width
+#     env_origin_z = 0  # Assuming origin_zero_z is True
+    
+#     # Robot spawns at 2m from the start of the environment
+#     robot_spawn_x = env_origin_x + 2.0
+    
+#     # Camera positioning strategy:
+#     # - Behind the robot (negative x offset)
+#     # - Elevated to get a good view
+#     # - Slightly angled down to see the terrain
+    
+#     camera_config = {
+#         # Position camera 3m behind spawn, 2m up, centered on y-axis
+#         "position": [
+#             robot_spawn_x - 3.0,  # Behind the robot
+#             env_origin_y,         # Centered on the environment
+#             env_origin_z + cam_height    # Elevated view
+#         ],
+#         # Rotation in euler angles (will need to convert to quaternion)
+#         # Looking slightly down and forward
+#         "rotation_euler": [0.0, -0.3, 0.0],  # pitch down by ~17 degrees
+        
+#         # Camera intrinsics
+#         "focal_length": 24.0,
+#         "focus_distance": 400.0,
+#         "horizontal_aperture": 20.955,
+#         "clipping_range": (0.1, 1000.0)
+#     }
+    
+#     # Convert euler angles to quaternion for Isaac Sim
+#     # Isaac Sim uses (w, x, y, z) quaternion format
+#     from scipy.spatial.transform import Rotation as R
+#     r = R.from_euler('xyz', camera_config["rotation_euler"])
+#     quat = r.as_quat()  # Returns (x, y, z, w)
+#     # Convert to Isaac Sim format (w, x, y, z)
+#     camera_config["rotation"] = (quat[3], quat[0], quat[1], quat[2])
+    
+#     return camera_config
+
 def get_camera_coords(col_idx, row_idx, env_cfg, cam_height=3.0):
     """
     Get camera position and rotation parameters for a specific terrain cell.
@@ -106,48 +163,15 @@ def get_camera_coords(col_idx, row_idx, env_cfg, cam_height=3.0):
     Returns:
         dict: Camera configuration with position and rotation
     """
-    # Get environment dimensions
-    env_length = env_cfg.terrain.terrain_length
-    env_width = env_cfg.terrain.terrain_width
-    
-    # Calculate environment origin for this cell (from add_terrain_to_map method)
-    env_origin_x = row_idx * env_length + 1.0
-    env_origin_y = (col_idx + 0.5) * env_width
-    env_origin_z = 0  # Assuming origin_zero_z is True
-    
-    # Robot spawns at 2m from the start of the environment
-    robot_spawn_x = env_origin_x + 2.0
-    
-    # Camera positioning strategy:
-    # - Behind the robot (negative x offset)
-    # - Elevated to get a good view
-    # - Slightly angled down to see the terrain
-    
     camera_config = {
         # Position camera 3m behind spawn, 2m up, centered on y-axis
-        "position": [
-            robot_spawn_x - 3.0,  # Behind the robot
-            env_origin_y,         # Centered on the environment
-            env_origin_z + cam_height    # Elevated view
-        ],
-        # Rotation in euler angles (will need to convert to quaternion)
-        # Looking slightly down and forward
-        "rotation_euler": [0.0, -0.3, 0.0],  # pitch down by ~17 degrees
-        
-        # Camera intrinsics
-        "focal_length": 24.0,
-        "focus_distance": 400.0,
-        "horizontal_aperture": 20.955,
-        "clipping_range": (0.1, 1000.0)
+        "position": (
+            0.0,
+            0,         # Centered on the environment
+            3.0    # Elevated view
+        ),
+        "rotation": (0.9945, 0.0, 0.1045, 0.0),
     }
-    
-    # Convert euler angles to quaternion for Isaac Sim
-    # Isaac Sim uses (w, x, y, z) quaternion format
-    from scipy.spatial.transform import Rotation as R
-    r = R.from_euler('xyz', camera_config["rotation_euler"])
-    quat = r.as_quat()  # Returns (x, y, z, w)
-    # Convert to Isaac Sim format (w, x, y, z)
-    camera_config["rotation"] = (quat[3], quat[0], quat[1], quat[2])
     
     return camera_config
 
@@ -174,11 +198,12 @@ def add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name):
             focal_length=24.0,
             focus_distance=400.0,
             horizontal_aperture=20.955,
-            clipping_range=(0.1, 1000.0),
+            clipping_range=(0.1, 100.0),
+            visible=False
         ),
         offset=TiledCameraCfg.OffsetCfg(
-            pos=cam_cfg_dict.get('position', (0.0, 0.0, 0.0)),
-            rot=cam_cfg_dict.get('rotation', (1.0, 0.0, 0.0, 0.0)),  # quaternion (w,x,y,z)
+            pos=cam_cfg_dict['position'],
+            rot=cam_cfg_dict['rotation'],  # quaternion (w,x,y,z)
             convention="world"
         )
     )
@@ -235,13 +260,12 @@ def evaluate(args):
         assert env_cfg.terrain.num_cols % args.num_terrain_types == 0, f"Current camera setup requires equally represented variations (which won't happen here since there are assumedly 10 terrain types and {env_cfg.terrain.num_cols} columns)"
         print("[INFO] Recording videos during training.")
         camera_col_idxes = list(range(env_cfg.terrain.num_cols))
-        camera_row_idxes = [env_cfg.terrain.num_rows - 1]
+        camera_row_idx = env_cfg.terrain.num_rows - 1
         cam_names = []
         for col_idx in camera_col_idxes: # variation
-            for row_idx in camera_row_idxes: # difficulty
-                cam_name = f"r{col_idx}_c{row_idx}"
-                cam_names.append(cam_name)
-                add_camera_to_env_cfg(env_cfg, col_idx, row_idx, cam_name)
+            cam_name = f"r{camera_row_idx}_c{col_idx}"
+            cam_names.append(cam_name)
+            add_camera_to_env_cfg(env_cfg, col_idx, camera_row_idx, cam_name)
 
         print(f"[INFO] Placed {len(cam_names)} cameras")
 
@@ -255,7 +279,10 @@ def evaluate(args):
 
     if args.video:
         video_out_dir = os.path.join(load_dir, "eval_videos")
-        env = MultiCamVideo(env, video_out_dir, cam_names)
+        cam_name_to_env_ids = {
+            cam_name: torch.where(env.terrain_types == int(cam_name.split("_c")[-1]))[0] for cam_name in cam_names
+        } # map camera name to the env with the robot acting in it (envs that have terrain_types matching the col_idx for the camera)
+        env = MultiCamVideo(env, video_out_dir, cam_name_to_env_ids)
 
     total_steps = args.max_steps if (args.max_steps is not None and args.max_steps > 0) else 10 * int(max_episode_length)
 
@@ -573,6 +600,7 @@ def evaluate(args):
             plt.show()
 
     env.close()
+    env.env.close()
 
 if __name__ == '__main__':
     evaluate(args)
