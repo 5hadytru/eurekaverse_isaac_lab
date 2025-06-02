@@ -224,8 +224,8 @@ class CustomTerrainCfg:
     max_init_terrain_level = 2 # starting curriculum state
     terrain_length = 18
     terrain_width = 4
-    num_rows = 10 # number of terrain rows (levels)  # spreaded is benifitiall !
-    num_cols = 40 # number of terrain cols (types)
+    num_rows = 6 # number of terrain rows (levels)  # spreaded is benifitiall !
+    num_cols = 6 # number of terrain cols (types)
     
     terrain_dict = {"smooth slope": 0., 
                     "rough slope up": 0.0,

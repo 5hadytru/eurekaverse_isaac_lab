@@ -90,8 +90,9 @@ app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
 from legged_gym.envs import *
-from isaaclab.sensors import CameraCfg
+from isaaclab.sensors import CameraCfg, TiledCameraCfg
 import isaaclab.sim as sim_utils
+
 
 def get_camera_coords(col_idx, row_idx, env_cfg, cam_height=3.0):
     """
@@ -163,14 +164,11 @@ def add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name):
     """
     cam_cfg_dict = get_camera_coords(col_idx, row_idx, env_cfg)
 
-    cam_height, cam_width = 480, 640
-    update_period = 0.0 # at each step
-
-    cam_cfg = CameraCfg(
-        prim_path=f"/World/Cameras/{camera_name}",
-        update_period=update_period,
-        height=cam_height,
-        width=cam_width,
+    cam_cfg = TiledCameraCfg(
+        prim_path=f"/World/envs/env_.*/{camera_name}",
+        update_period=0,
+        height=480,
+        width=640,
         data_types=['rgb'],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=24.0,
@@ -178,13 +176,14 @@ def add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name):
             horizontal_aperture=20.955,
             clipping_range=(0.1, 1000.0),
         ),
-        offset=CameraCfg.OffsetCfg(
+        offset=TiledCameraCfg.OffsetCfg(
             pos=cam_cfg_dict.get('position', (0.0, 0.0, 0.0)),
             rot=cam_cfg_dict.get('rotation', (1.0, 0.0, 0.0, 0.0)),  # quaternion (w,x,y,z)
+            convention="world"
         )
     )
 
-    setattr(env_cfg, camera_name, cam_cfg)
+    setattr(env_cfg.scene, "cam_" + camera_name, cam_cfg)
 
 def evaluate(args):
     faulthandler.enable()
@@ -235,14 +234,15 @@ def evaluate(args):
         assert args.num_terrain_types is not None, "Must provide number of terrain types since cameras are evenly distributed among them"
         assert env_cfg.terrain.num_cols % args.num_terrain_types == 0, f"Current camera setup requires equally represented variations (which won't happen here since there are assumedly 10 terrain types and {env_cfg.terrain.num_cols} columns)"
         print("[INFO] Recording videos during training.")
-        camera_col_idxes = list(range(0, env_cfg.terrain.num_cols, env_cfg.terrain.num_cols // args.num_terrain_types))
-        camera_row_idxes = list(range(env_cfg.terrain.num_rows))
+        camera_col_idxes = list(range(env_cfg.terrain.num_cols))
+        camera_row_idxes = [env_cfg.terrain.num_rows - 1]
         cam_names = []
         for col_idx in camera_col_idxes: # variation
-            for row_idx in camera_row_idxes: # difficulty; all difficulties for each variation
-                cam_name = f"cam_r{col_idx}_c{row_idx}"
+            for row_idx in camera_row_idxes: # difficulty
+                cam_name = f"r{col_idx}_c{row_idx}"
                 cam_names.append(cam_name)
                 add_camera_to_env_cfg(env_cfg, col_idx, row_idx, cam_name)
+
         print(f"[INFO] Placed {len(cam_names)} cameras")
 
     # prepare environment

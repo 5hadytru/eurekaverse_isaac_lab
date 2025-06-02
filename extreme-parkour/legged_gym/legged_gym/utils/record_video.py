@@ -17,10 +17,9 @@ class MultiCamVideo(gym.Wrapper):
     def step(self, action):
         obs, r, term, trunc, info = self.env.step(action)
         if self.frame < self.len:
-            for c in self.cam_names:
-                print(list(self.env.scene.sensors.keys()))
-                img = self.env.scene.sensors[c].data.output["rgb"]      # (H,W,3)
-                self.writers[c].append_data(img)
+            for c_i, c in enumerate(self.cam_names):
+                image = self.env.scene["cam_" + c].data.output["rgb"]
+                # self.writers[c].append_data(image)
         self.frame += 1
         
         return obs, r, term, trunc, info
