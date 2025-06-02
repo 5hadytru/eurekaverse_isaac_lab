@@ -36,6 +36,6 @@ terrain:
   terrain_width: 4
   vertical_scale: 0.005
   horizontal_scale: 0.1
-  num_cols: 8
+  num_cols: 6
   num_rows: 6
   num_goals: 8
