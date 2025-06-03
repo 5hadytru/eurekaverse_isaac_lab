@@ -151,7 +151,7 @@ import isaaclab.sim as sim_utils
     
 #     return camera_config
 
-def get_camera_coords(col_idx, row_idx, env_cfg, cam_height=3.0):
+def get_camera_coords(col_idx, row_idx, env_cfg, cam_height=4.0):
     """
     Get camera position and rotation parameters for a specific terrain cell.
     
@@ -164,13 +164,12 @@ def get_camera_coords(col_idx, row_idx, env_cfg, cam_height=3.0):
         dict: Camera configuration with position and rotation
     """
     camera_config = {
-        # Position camera 3m behind spawn, 2m up, centered on y-axis
         "position": (
+            -17.5,
             0.0,
-            0,         # Centered on the environment
-            3.0    # Elevated view
+            cam_height
         ),
-        "rotation": (0.9945, 0.0, 0.1045, 0.0),
+        "rotation": (1.0, 0.0, 0.2, 0.0),
     }
     
     return camera_config
@@ -198,7 +197,7 @@ def add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name):
             focal_length=24.0,
             focus_distance=400.0,
             horizontal_aperture=20.955,
-            clipping_range=(0.1, 100.0),
+            clipping_range=(0.1, 1000.0),
             visible=False
         ),
         offset=TiledCameraCfg.OffsetCfg(

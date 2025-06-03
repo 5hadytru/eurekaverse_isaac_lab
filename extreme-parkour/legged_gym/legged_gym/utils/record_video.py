@@ -21,7 +21,7 @@ class MultiCamVideo(gym.Wrapper):
             for cam_name in self.cam_name_to_env_ids.keys():
                 # Get the image tensor (X, H, W, 3)
                 image = self.env.scene["cam_" + cam_name].data.output["rgb"][self.cam_name_to_env_ids[cam_name]]
-                print(f"Received {image.shape} from {cam_name}")
+                # print(f"Received {image.shape} from {cam_name}")
                 
                 # Arrange images in 2x3 grid
                 if len(image.shape) == 4:  # (X, H, W, 3)
@@ -37,9 +37,9 @@ class MultiCamVideo(gym.Wrapper):
                         # Convert to numpy and write to video
                         self.writers[cam_name].append_data(grid_image.cpu().numpy().astype('uint8'))
                     else:
-                        print(f"Warning: Expected 6 images for 2x3 grid, got {X} images for camera {cam_name}")
+                        raise Exception(f"Expected 6 images for 2x3 grid, got {X} images for camera {cam_name}")
                 else:
-                    print(f"Warning: Unexpected image shape {image.shape} for camera {cam_name}")
+                    raise Exception(f"Unexpected image shape {image.shape} for camera {cam_name}")
         
         self.frame += 1
         return obs, r, term, trunc, info
