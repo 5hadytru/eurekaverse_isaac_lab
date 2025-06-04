@@ -177,8 +177,8 @@ def evaluate(args):
         assert args.num_terrain_types is not None, "Must provide number of terrain types since cameras are evenly distributed among them"
         assert env_cfg.terrain.num_cols % args.num_terrain_types == 0, f"Current camera setup requires equally represented variations (which won't happen here since there are assumedly 10 terrain types and {env_cfg.terrain.num_cols} columns)"
         print("[INFO] Recording videos during training.")
-        camera_col_idxes = list(range(env_cfg.terrain.num_cols))
-        camera_row_idxes = [(0,1), (2,3)]
+        camera_col_idxes = [(0,1), (2,3)]
+        camera_row_idxes = list(range(env_cfg.terrain.num_rows))
         cam_names = []
         idx_to_str = lambda idx: f"{idx[0]}_{idx[1]}" if isinstance(idx, tuple) else str(idx)
         for col_idx in camera_col_idxes: # variation
@@ -219,7 +219,7 @@ def evaluate(args):
             mask = torch.isin(env.terrain_types.cpu(), torch.tensor(col_range)) & torch.isin(env.terrain_levels.cpu(), torch.tensor(row_range))
             matched_env_ids = torch.nonzero(mask).squeeze()
 
-            print(f"Matched {matched_env_ids.size()} env IDs to cam {cam_name}")
+            print(f"Matched {matched_env_ids} env IDs with rows {row_range} and cols {col_range} to cam {cam_name}")
 
             cam_name_to_env_ids[cam_name] = matched_env_ids
 
