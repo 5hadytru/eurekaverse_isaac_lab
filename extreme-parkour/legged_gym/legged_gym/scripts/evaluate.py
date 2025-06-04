@@ -48,7 +48,7 @@ import copy
 from isaaclab.utils.dict import print_dict
 from isaaclab.app import AppLauncher
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.utils import task_registry, add_shared_args, MultiCamVideo
+from legged_gym.utils import task_registry, add_shared_args, MultiCamVideo, get_camera_coords
 from legged_gym.utils.helpers import get_checkpoint
 
 
@@ -94,87 +94,6 @@ from isaaclab.sensors import CameraCfg, TiledCameraCfg
 import isaaclab.sim as sim_utils
 
 
-# def get_camera_coords(col_idx, row_idx, env_cfg, cam_height=3.0):
-#     """
-#     Get camera position and rotation parameters for a specific terrain cell.
-    
-#     Args:
-#         col_idx: Column index in the terrain grid
-#         row_idx: Row index in the terrain grid
-#         env_cfg: Environment configuration containing terrain parameters
-        
-#     Returns:
-#         dict: Camera configuration with position and rotation
-#     """
-#     # Get environment dimensions
-#     env_length = env_cfg.terrain.terrain_length
-#     env_width = env_cfg.terrain.terrain_width
-    
-#     # Calculate environment origin for this cell (from add_terrain_to_map method)
-#     env_origin_x = row_idx * env_length + 1.0
-#     env_origin_y = (col_idx + 0.5) * env_width
-#     env_origin_z = 0  # Assuming origin_zero_z is True
-    
-#     # Robot spawns at 2m from the start of the environment
-#     robot_spawn_x = env_origin_x + 2.0
-    
-#     # Camera positioning strategy:
-#     # - Behind the robot (negative x offset)
-#     # - Elevated to get a good view
-#     # - Slightly angled down to see the terrain
-    
-#     camera_config = {
-#         # Position camera 3m behind spawn, 2m up, centered on y-axis
-#         "position": [
-#             robot_spawn_x - 3.0,  # Behind the robot
-#             env_origin_y,         # Centered on the environment
-#             env_origin_z + cam_height    # Elevated view
-#         ],
-#         # Rotation in euler angles (will need to convert to quaternion)
-#         # Looking slightly down and forward
-#         "rotation_euler": [0.0, -0.3, 0.0],  # pitch down by ~17 degrees
-        
-#         # Camera intrinsics
-#         "focal_length": 24.0,
-#         "focus_distance": 400.0,
-#         "horizontal_aperture": 20.955,
-#         "clipping_range": (0.1, 1000.0)
-#     }
-    
-#     # Convert euler angles to quaternion for Isaac Sim
-#     # Isaac Sim uses (w, x, y, z) quaternion format
-#     from scipy.spatial.transform import Rotation as R
-#     r = R.from_euler('xyz', camera_config["rotation_euler"])
-#     quat = r.as_quat()  # Returns (x, y, z, w)
-#     # Convert to Isaac Sim format (w, x, y, z)
-#     camera_config["rotation"] = (quat[3], quat[0], quat[1], quat[2])
-    
-#     return camera_config
-
-def get_camera_coords(col_idx, row_idx, env_cfg, cam_height=4.0):
-    """
-    Get camera position and rotation parameters for a specific terrain cell.
-    
-    Args:
-        col_idx: Column index in the terrain grid
-        row_idx: Row index in the terrain grid
-        env_cfg: Environment configuration containing terrain parameters
-        
-    Returns:
-        dict: Camera configuration with position and rotation
-    """
-    camera_config = {
-        "position": (
-            -17.5,
-            0.0,
-            cam_height
-        ),
-        "rotation": (1.0, 0.0, 0.2, 0.0),
-    }
-    
-    return camera_config
-
-
 def add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name):
     """
     Add a camera configuration to the environment config for a specific terrain cell.
@@ -185,17 +104,17 @@ def add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name):
         row_idx: Row index in the terrain grid
         camera_name: Optional name for the camera (defaults to "cam_r{row}_c{col}")
     """
-    cam_cfg_dict = get_camera_coords(col_idx, row_idx, env_cfg)
+    cam_cfg_dict = get_camera_coords(col_idx, row_idx)
 
     cam_cfg = TiledCameraCfg(
         prim_path=f"/World/envs/env_.*/{camera_name}",
         update_period=0,
-        height=480,
-        width=640,
+        height=544,
+        width=1088,
         data_types=['rgb'],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=24.0,
-            focus_distance=400.0,
+            focus_distance=20.0,
             horizontal_aperture=20.955,
             clipping_range=(0.1, 1000.0),
             visible=False
@@ -207,7 +126,7 @@ def add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name):
         )
     )
 
-    setattr(env_cfg.scene, "cam_" + camera_name, cam_cfg)
+    setattr(env_cfg.scene, camera_name, cam_cfg)
 
 def evaluate(args):
     faulthandler.enable()
@@ -259,12 +178,14 @@ def evaluate(args):
         assert env_cfg.terrain.num_cols % args.num_terrain_types == 0, f"Current camera setup requires equally represented variations (which won't happen here since there are assumedly 10 terrain types and {env_cfg.terrain.num_cols} columns)"
         print("[INFO] Recording videos during training.")
         camera_col_idxes = list(range(env_cfg.terrain.num_cols))
-        camera_row_idx = env_cfg.terrain.num_rows - 1
+        camera_row_idxes = [(0,1), (2,3)]
         cam_names = []
+        idx_to_str = lambda idx: f"{idx[0]}_{idx[1]}" if isinstance(idx, tuple) else str(idx)
         for col_idx in camera_col_idxes: # variation
-            cam_name = f"r{camera_row_idx}_c{col_idx}"
-            cam_names.append(cam_name)
-            add_camera_to_env_cfg(env_cfg, col_idx, camera_row_idx, cam_name)
+            for row_idx in camera_row_idxes:
+                cam_name = f"cam_{idx_to_str(row_idx)}r_c{idx_to_str(col_idx)}"
+                cam_names.append(cam_name)
+                add_camera_to_env_cfg(env_cfg, col_idx, row_idx, cam_name)
 
         print(f"[INFO] Placed {len(cam_names)} cameras")
 
@@ -278,9 +199,30 @@ def evaluate(args):
 
     if args.video:
         video_out_dir = os.path.join(load_dir, "eval_videos")
-        cam_name_to_env_ids = {
-            cam_name: torch.where(env.terrain_types == int(cam_name.split("_c")[-1]))[0] for cam_name in cam_names
-        } # map camera name to the env with the robot acting in it (envs that have terrain_types matching the col_idx for the camera)
+
+        # map camera name to the envs with the robot acting in it (envs that have terrain_types matching the col_idx for the camera + have difficulty matching row_idx)
+        def cam_name_to_matched_rows_and_cols(n:str):
+            def get_range(nums):
+                if "_" in nums:
+                    return tuple(map(int, nums.split("_")))
+                else:
+                    return (int(nums), int(nums))
+
+            inclusive_row_range = get_range(n[4:].split("r")[0])
+            inclusive_col_range = get_range(n[4:].split("c")[-1])
+
+            return list(range(inclusive_row_range[0], inclusive_row_range[1] + 1)), list(range(inclusive_col_range[0], inclusive_col_range[1] + 1))
+
+        cam_name_to_env_ids = {}
+        for cam_name in cam_names:
+            row_range, col_range = cam_name_to_matched_rows_and_cols(cam_name)
+            mask = torch.isin(env.terrain_types.cpu(), torch.tensor(col_range)) & torch.isin(env.terrain_levels.cpu(), torch.tensor(row_range))
+            matched_env_ids = torch.nonzero(mask).squeeze()
+
+            print(f"Matched {matched_env_ids.size()} env IDs to cam {cam_name}")
+
+            cam_name_to_env_ids[cam_name] = matched_env_ids
+
         env = MultiCamVideo(env, video_out_dir, cam_name_to_env_ids)
 
     total_steps = args.max_steps if (args.max_steps is not None and args.max_steps > 0) else 10 * int(max_episode_length)

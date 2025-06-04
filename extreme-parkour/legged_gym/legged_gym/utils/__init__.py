@@ -31,5 +31,5 @@
 from .helpers import class_to_dict, update_class_from_dict, update_cfg_from_args, set_seed, get_checkpoint, export_policy_as_jit, add_sim_args, add_agent_args, add_terrain_args, add_shared_args
 from .task_registry import task_registry
 from .logger import Logger
-from .record_video import MultiCamVideo
+from .record_video import MultiCamVideo, get_camera_coords
 # from .terrain_minimal import Terrain
