@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A sequence of angled 'A-frame ramps' and low hurdles that test the quadruped's climbing and descending on sloped surfaces."""
+    """A sequence of sloped ramps (A-frame dogwalks) to test balance and walking on angled surfaces."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,61 +11,72 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Spawn and flat entry area
-    spawn_length = m_to_idx(2)
-    height_field[:spawn_length, :] = 0
+    # Terrain parameters
+    mid_y = m_to_idx(width // 2 if width % 2 == 0 else width / 2)
+    course_x = 0
 
-    # Ramp/hurdle setup
-    num_obstacles = 6
-    space_length = length - 2.2  # 2m spawn, 0.2m buffer at end
-    obs_spacing = space_length / num_obstacles
-    ramp_base = 1.2 - 0.4 * difficulty    # Ramp "floor" width: 1.2m to 0.8m
-    ramp_base = max(0.8, ramp_base)
-    ramp_height = 0.15 + 0.25 * difficulty  # 0.15m to 0.40m at hardest
-    hurdle_height = 0.08 + 0.10 * difficulty  # Small, can step over
+    # Ramp parameters
+    ramp_base_length = 2.0           # meters
+    ramp_height = 0.25 + 0.25 * difficulty   # meters, ramps are 0.25-0.5m tall
+    ramp_length = 1.25 + 0.75 * difficulty   # meters, each sloped section is 1.25-2.0m long
+    flat_top_length = 0.35 + 0.2 * difficulty # meters, length of flat plate at ramp peak
+    ramp_total_length = 2 * ramp_length + flat_top_length
 
-    mid_y = m_to_idx(width / 2)
-    w = m_to_idx(width)
-    ramp_width = m_to_idx(1.2)  # Wide enough so robot can swerve slightly
+    ramp_width = 1.2 - 0.35 * difficulty # 1.2m at easy, 0.85m at hard
+    ramp_width = max(1.0, ramp_width)    # never less than 1m
+    side_clear = m_to_idx(0.2)           # always at least 0.2m to terrain edge
 
-    # Stagger: alternate: ramp, hurdle, ramp, hurdle, ramp, hurdle
-    obs_list = []
-    for i in range(num_obstacles):
-        x_start = spawn_length + int(i * obs_spacing)
-        x_end = x_start + m_to_idx(ramp_base)
-        y1 = mid_y - ramp_width//2
-        y2 = y1 + ramp_width
+    num_ramps = 5
+    total_used_x = num_ramps * ramp_total_length + (num_ramps - 1) * 0.5
+    # If more space, use gentler slopes. If less, stack them closer
+    inter_ramp_gap = (length - num_ramps * ramp_total_length) / (num_ramps + 1)
+    inter_ramp_gap = max(0.3, inter_ramp_gap)  # no less than 0.3m between ramps
 
-        if i % 2 == 0:
-            # Create an A-frame ramp (ascending then descending in succession)
-            half_ramp = (x_end - x_start)//2
-            # Ascend
-            for j in range(half_ramp):
-                height_field[x_start + j, y1:y2] = (j / (half_ramp)) * ramp_height
-            # Descend
-            for j in range(half_ramp, x_end - x_start):
-                height_field[x_start + j, y1:y2] = ramp_height - ((j - half_ramp)/(half_ramp)) * ramp_height
-            # Clamp at edges
-            height_field[x_start:x_end, 0:y1] = 0
-            height_field[x_start:x_end, y2:] = 0
-            # Mid-ramp goal at the top
-            goals[i+1] = [x_start + half_ramp, mid_y]
-            obs_list.append(('ramp', x_start, x_end, y1, y2))
-        else:
-            # Hurdle is a low, blocky obstacle stretching across the course
-            hurdle_length = m_to_idx(0.45 + 0.15 * difficulty)
-            x1 = x_start
-            x2 = min(x_start + hurdle_length, m_to_idx(length)-1)
-            height_field[x1:x2, :] = hurdle_height
-            # Place goal just after hurdle
-            goals[i+1] = [int((x1 + x2) / 2), mid_y]
-            obs_list.append(('hurdle', x1, x2, 0, w))
+    cur_x = m_to_idx(2)  # Start after spawn area
+    height_field[:cur_x, :] = 0.0  # Flat spawn area
+    goals[0] = [m_to_idx(1), mid_y]  # First goal at center of spawn
 
-    # Final goal at the end on flat terrain
-    goals[0] = [m_to_idx(1), mid_y]   # start
-    goals[7] = [m_to_idx(length)-m_to_idx(0.5), mid_y]
+    # Allows some variance in y offset, but keep most ramps nearly straight
+    y_offsets = np.linspace(0, m_to_idx(width - ramp_width) // 2, num_ramps, dtype=int)
 
-    # Buffer zone at the end for the robot to stop safely
-    height_field[-m_to_idx(0.2):, :] = 0
+    def add_dogwalk(x_start, y_center, ramp_len, flat_len, width, height):
+        """Add an A-frame ramp with a flat top centered at y_center."""
+        y1 = y_center - m_to_idx(width // 2)
+        y2 = y_center + m_to_idx(width // 2)
+
+        # Ramp up
+        for step in range(m_to_idx(ramp_len)):
+            x = x_start + step
+            h = step / m_to_idx(ramp_len) * height
+            height_field[x, y1:y2] = h
+
+        # Flat top
+        for step in range(m_to_idx(flat_len)):
+            x = x_start + m_to_idx(ramp_len) + step
+            height_field[x, y1:y2] = height
+
+        # Ramp down
+        for step in range(m_to_idx(ramp_len)):
+            x = x_start + m_to_idx(ramp_len) + m_to_idx(flat_len) + step
+            h = height * (1 - step / m_to_idx(ramp_len))
+            height_field[x, y1:y2] = h
+
+        return ((x_start + m_to_idx(ramp_len + flat_len // 2)), y_center)
+
+    for i in range(num_ramps):
+        y_center = mid_y + random.randint(-side_clear, side_clear)
+        ramp_center_x = cur_x + m_to_idx(ramp_length + flat_top_length / 2)
+        goal_x = cur_x + m_to_idx(ramp_length + flat_top_length / 2)
+        goal_y = y_center
+        goals[i+1] = [goal_x, goal_y]
+        # Each ramp is an A-frame "dogwalk"
+        add_dogwalk(cur_x, y_center, ramp_length, flat_top_length, ramp_width, ramp_height)
+        cur_x += m_to_idx(ramp_total_length + inter_ramp_gap)
+
+    # After last ramp, flat ground, final goal
+    height_field[cur_x:, :] = 0.0
+    goals[6] = [cur_x + m_to_idx(0.1), mid_y]
+    # 7th goal at very end of terrain
+    goals[7] = [m_to_idx(length) - m_to_idx(1), mid_y]
 
     return height_field, goals

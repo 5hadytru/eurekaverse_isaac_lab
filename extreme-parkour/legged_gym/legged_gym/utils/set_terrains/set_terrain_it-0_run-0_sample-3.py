@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A sequence of alternating angled ramps testing sloped walking and balance."""
+    """A sequence of alternating ramps and sidewise balance beams to challenge robot stability and precision."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,93 +11,91 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((8, 2))
 
-    # Ramp parameters
-    ramp_length = 1.5 - 0.3 * difficulty             # Longer ramps at easier settings
-    ramp_length_i = m_to_idx(ramp_length)
-    ramp_width = 1.2 - 0.4 * difficulty              # Narrower ramps at higher difficulty
-    ramp_width = max(ramp_width, 0.6)
-    ramp_width_i = m_to_idx(ramp_width)
-    max_angle = 12 + 14 * difficulty                 # From 12 deg up to 26 deg (in degrees)
-    min_angle = 7 + 3 * difficulty
-    angle_rad = np.deg2rad(random.uniform(min_angle, max_angle))
+    # Core parameters
+    mid_y = m_to_idx(width/2)
+    field_len = m_to_idx(length)
+    field_wid = m_to_idx(width)
 
-    # Total ramps = 6, alternating up and down; spawn + finish on flat
-    n_ramps = 6
-    pit_depth = -1.0                                 # Flat ground below ramps (pit)
-    up_direction = +1
+    # --- Obstacle dimensions ---
+    # Ramp variables
+    min_ramp_height = 0.10 + 0.10 * difficulty    # meters
+    max_ramp_height = 0.30 + 0.25 * difficulty    # meters
+    ramp_length = 1.25 - 0.50 * difficulty        # slightly longer, shorter at high diff.
+    ramp_width = 1.2                              # meters, always >= 1 meter
+    
+    # Beam variables
+    beam_length = 1.1 + 0.5 * difficulty          # meters; longer beam at higher difficulty
+    beam_width = 0.40 + 0.15 * (1-difficulty)     # meters; wider beam at lower diff, narrower at high
+    beam_height = 0.18 + 0.18 * difficulty        # meters (robot can't just step off easily)
+    
+    # Offsets and counts
+    spawn_x = m_to_idx(2)                         # Leave spawn area clear!
+    n_obstacles = 3                               # 3 ramps, 3 beams = 6 obstacles + start & end
+    safe_margin = m_to_idx(0.3)
+    obstacle_gap = m_to_idx(0.30 + 0.40 * difficulty)  # Between obstacles
 
-    mid_y = m_to_idx(width) // 2
-    centerline = mid_y
-    spawn_length_i = m_to_idx(2.0)
-    cur_x = spawn_length_i
-    total_x = m_to_idx(length)
+    # Helper for inserting ramp
+    def add_ramp(x0, y0, ramp_len, ramp_wid, h0, h1):
+        x0, y0 = int(x0), int(y0)
+        x1 = x0 + m_to_idx(ramp_len)
+        y1 = max(0, y0 - m_to_idx(ramp_wid/2))
+        y2 = min(field_wid, y0 + m_to_idx(ramp_wid/2))
+        for xi in range(x0, min(field_len, x1)):
+            advance = (xi - x0) / max(1, x1-x0-1)
+            h = (1-advance)*h0 + advance*h1
+            height_field[xi, y1:y2] = h
+    
+    # Helper for inserting beam (straight, sideways for fun)
+    def add_beam(x0, y0, beam_len, beam_wid, beam_h, angle_deg=0):
+        # Beam extends along angle from (x0, y0)
+        angle = np.deg2rad(angle_deg)
+        dx = np.cos(angle)
+        dy = np.sin(angle)
+        nsteps = m_to_idx(beam_len)
+        bwid = m_to_idx(beam_wid)
+        for step in range(nsteps):
+            xi = int(round(x0 + dx*step))
+            yi_c = int(round(y0 + dy*step))
+            y1 = max(0, yi_c - bwid//2)
+            y2 = min(field_wid, yi_c + bwid//2)
+            if 0 <= xi < field_len:
+                height_field[xi, y1:y2] = beam_h
 
-    # Keep spawn area flat
-    height_field[:spawn_length_i, :] = 0
-    goals[0] = [spawn_length_i - m_to_idx(0.5), centerline]
+    # Initial flat spawn
+    height_field[:spawn_x, :] = 0.0
+    goals[0] = [spawn_x-m_to_idx(0.5), mid_y]
 
-    # Make pit everywhere except ramps
-    height_field[spawn_length_i:, :] = pit_depth
+    cur_x = spawn_x
+    for i in range(n_obstacles):
+        # RAMP
+        rh0 = 0.0
+        rh1 = np.random.uniform(min_ramp_height, max_ramp_height)
+        # Place ramp straight, left-to-right
+        add_ramp(cur_x, mid_y, ramp_length, ramp_width, rh0, rh1)
+        # Goal top of ramp
+        ramp_goal_x = cur_x + m_to_idx(ramp_length * 0.8)
+        goals[1+i*2] = [ramp_goal_x, mid_y]
+        cur_x += m_to_idx(ramp_length) + safe_margin
 
-    y_offset_range = m_to_idx(0.6 - 0.3 * difficulty) # Lateral offset for ramps
+        # BEAM
+        # Beams alternate offset left/right of center
+        beam_angle = 8 * (1 if i%2==0 else -1)       # Slight beam angle, increases challenge
+        # Beam lateral offset at higher diff
+        beam_center_y = mid_y + int((i%2)*2-1) * int(beam_width*1.2 * (0.25 + 0.75*difficulty))
+        add_beam(cur_x, beam_center_y, beam_length, beam_width, beam_height, angle_deg=beam_angle)
+        # Next goal: center of beam
+        beam_goal_x = cur_x + m_to_idx(beam_length*0.5)
+        goals[2+i*2] = [beam_goal_x, beam_center_y]
+        cur_x += m_to_idx(beam_length) + obstacle_gap
 
-    prev_height = 0.0
-    x_range = []
-    y_ramps = []
-    ramp_signs = []
+    # Final goal, flat ground after last obstacle
+    final_x = min(cur_x + m_to_idx(0.8), field_len - 1)
+    height_field[cur_x:, :] = 0.0
+    goals[7] = [final_x, mid_y]
 
-    for i in range(n_ramps):
-        # Alternate ramp up & down direction
-        sign = up_direction if i % 2 == 0 else -up_direction
-
-        # Slightly randomize the ramp angle and lateral position
-        ramp_angle = np.deg2rad(random.uniform(min_angle, max_angle))
-        ramp_length_eff = ramp_length + random.uniform(-0.1, 0.1)
-        ramp_length_i = m_to_idx(ramp_length_eff)
-        y_offset = random.randint(-y_offset_range, y_offset_range)
-        ramp_center = centerline + y_offset
-        ramp_left = ramp_center - ramp_width_i // 2
-        ramp_right = ramp_left + ramp_width_i
-
-        start_x = cur_x
-        end_x = min(start_x + ramp_length_i, total_x - m_to_idx(1.0))
-        local_x = np.arange(start_x, end_x)
-        n_points = len(local_x)
-
-        # Linear slope for ramp
-        slope = sign * np.tan(ramp_angle)
-        heights = prev_height + slope * np.linspace(0, ramp_length_eff, n_points)
-
-        # Write ramp
-        for idx, x in enumerate(local_x):
-            height_field[x, ramp_left:ramp_right] = heights[idx]
-            # Pit elsewhere (already set)
-
-        # Save center of the ramp for goals (middle along length)
-        ramp_center_x = int(round(start_x + n_points // 2))
-        goals[i+1] = [ramp_center_x, ramp_center]
-        prev_height = heights[-1]
-        cur_x = end_x
-        x_range.append((start_x, end_x))
-        y_ramps.append(ramp_center)
-        ramp_signs.append(sign)
-
-        # Flat landing between ramps (shorter at harder difficulty)
-        flat_space = 0.48 - 0.23 * difficulty
-        flat_i = m_to_idx(flat_space)
-        if cur_x + flat_i > total_x - m_to_idx(1.5):    # Avoid running out of room
-            break
-        height_field[cur_x:cur_x+flat_i, ramp_left:ramp_right] = prev_height
-        cur_x += flat_i
-
-    # Final goal: flat platform at the end
-    end_pad = m_to_idx(1.1)
-    finish_x = min(cur_x, total_x-end_pad)
-    height_field[finish_x:finish_x+end_pad, :] = prev_height
-    goals[7] = [finish_x + end_pad // 2, centerline]
-
-    # If fewer than 8 goals placed, fill in with end positions
-    for j in range(i + 2, 7):
-        goals[j] = [finish_x, centerline]
+    # Clamp all goals to inside height_field
+    for i in range(8):
+        goals[i,0] = min(max(0, goals[i,0]), height_field.shape[0]-1)
+        goals[i,1] = min(max(0, goals[i,1]), height_field.shape[1]-1)
 
     return height_field, goals
