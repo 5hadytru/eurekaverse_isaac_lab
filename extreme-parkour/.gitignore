@@ -2,3 +2,5 @@ isaacgym*
 .ipynb_checkpoints/
 .vscode/
 *img
+
+legged_gym/legged_gym/utils/set_terrains
