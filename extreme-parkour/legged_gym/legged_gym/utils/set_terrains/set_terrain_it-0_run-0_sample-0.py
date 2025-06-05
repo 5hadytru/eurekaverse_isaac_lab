@@ -2,102 +2,97 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A series of sloped ramps and steps in alternating directions to test the quadruped's uphill and downhill traversal ability."""
+    """A balance beam course: Long, narrow beams (at ground level) and wide low platforms alternating, requiring the robot to walk steadily, turn, and step between beams and platforms."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
 
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
-    goals = np.zeros((4, 2))
+    goals = np.zeros((5, 2))
 
-    # Parameters based on quadruped size
-    ramp_length = max(1.4, 2.5 - 1.0 * difficulty)           # Each ramp covers > 2 body lengths
-    ramp_height = 0.12 + 0.22 * difficulty                   # Max ramp height rises with difficulty
-    ramp_width = max(1.0, 1.7 - 0.3 * difficulty)            # Make slightly narrower at harder levels
-    step_height = 0.04 + 0.11 * difficulty                   # Steps at ramp tops, low at easy difficulty
-    step_length = 0.4 + 0.25 * difficulty                    # Steps are just longer than quadruped
+    # Course constants (robot size: 0.645 x 0.28 m)
+    beam_width = (0.3 + 0.25 * (1-difficulty))        # 0.55m at easy, 0.3m at hard
+    beam_width = max(beam_width, 0.3)
+    beam_width_idx = m_to_idx(beam_width)
+    beam_length = 2.2 + 1.5 * difficulty              # 2.2m at easy, up to 3.7m at hard
+    beam_length_idx = m_to_idx(beam_length)
+    platform_size = 1.4 - 0.6 * difficulty            # 1.4m wide at easy, down to 0.8m at hard
+    platform_size_idx = m_to_idx(platform_size)
+    beam_height = 0.05 + 0.08 * difficulty            # 5cm at easy, 13cm at hard
+    platform_height = 0.00                            # flush with ground
 
-    ramp_length_idx = m_to_idx(ramp_length)
-    ramp_width_idx = m_to_idx(ramp_width)
-    ramp_height = float(ramp_height)
-    step_length_idx = m_to_idx(step_length)
-    step_height = float(step_height)
+    course_x = m_to_idx(1.8)  # Start after spawn (avoid [0,2m))
+    alternating_offset = m_to_idx(1.3)                # Lateral offset for turns
 
-    course_length_idx = m_to_idx(length)
-    course_width_idx = m_to_idx(width)
-    mid_y = course_width_idx // 2
+    cur_y_idx = m_to_idx(width / 2)                   # Center line
+    width_idx = m_to_idx(width)
 
-    safe_zone_idx = m_to_idx(2)
-    # Keep the spawn area flat
-    height_field[:safe_zone_idx, :] = 0
-    goals[0, :] = [m_to_idx(1), mid_y]  # Start goal
+    # Helper for adding beam ("balance beam" obstacle)
+    def add_beam(x_start, x_end, y_center, width_idx, height):
+        y1 = max(y_center - width_idx // 2, 0)
+        y2 = min(y_center + width_idx // 2 + 1, height_field.shape[1])
+        x1 = int(x_start)
+        x2 = int(min(x_end, height_field.shape[0]))
+        height_field[x1:x2, y1:y2] = height
 
-    # Each obstacle direction (ramp up, step, ramp down, etc.) - four obstacles/zones
-    x_ptr = safe_zone_idx
-    for i in range(3):
-        # Alternate ramp orientation: up, down, up
-        up = (i % 2 == 0)
+    # Helper for adding platform (wider square/circular area)
+    def add_platform(x_center, y_center, size_idx, height):
+        half = size_idx // 2
+        x1 = int(max(x_center - half, 0))
+        x2 = int(min(x_center + half + 1, height_field.shape[0]))
+        y1 = int(max(y_center - half, 0))
+        y2 = int(min(y_center + half + 1, height_field.shape[1]))
+        height_field[x1:x2, y1:y2] = height
 
-        # Keep ramps at least 1m wide, randomize slight lateral offset within bounds
-        y_offset = random.randint(-m_to_idx(0.5), m_to_idx(0.5))
-        y1 = max(0, mid_y - ramp_width_idx//2 + y_offset)
-        y2 = min(course_width_idx, y1 + ramp_width_idx)
-        # Ensure y bounds are valid
-        if y2 > course_width_idx:
-            y1 -= (y2 - course_width_idx)
-            y2 = course_width_idx
+    # Set spawn area to flat ground
+    spawn_length = m_to_idx(2.0)
+    height_field[:spawn_length, :] = 0
 
-        # RAMP: linear slope up or down
-        x_end_ramp = min(x_ptr + ramp_length_idx, course_length_idx)
-        ramp_y_region = slice(y1, y2)
-        
-        if up:
-            height_start = height_field[x_ptr-1, mid_y] if x_ptr > 0 else 0
-            for j, x in enumerate(range(x_ptr, x_end_ramp)):
-                val = height_start + ramp_height * (j / max(1, ramp_length_idx-1))
-                height_field[x, ramp_y_region] = val
-            ramp_top = height_start + ramp_height
-        else:
-            height_start = height_field[x_ptr-1, mid_y] if x_ptr > 0 else ramp_height
-            for j, x in enumerate(range(x_ptr, x_end_ramp)):
-                val = height_start - ramp_height * (j / max(1, ramp_length_idx-1))
-                height_field[x, ramp_y_region] = val
-            ramp_top = height_start - ramp_height
+    # GOAL 1: On first platform, after spawn
+    plat_x_center = course_x
+    plat_y_center = cur_y_idx
+    add_platform(plat_x_center, plat_y_center, platform_size_idx, platform_height)
+    goals[0, :] = [plat_x_center, plat_y_center]
 
-        # STEP: short block after ramp to break gait and require stepping up/down (like a curb)
-        x1_step = x_end_ramp
-        x2_step = min(x1_step + step_length_idx, course_length_idx)
-        # Slightly randomize step width but keep safe min
-        w_step = max(m_to_idx(1.0), ramp_width_idx - m_to_idx(0.15))
-        y1_step = max(0, mid_y - w_step//2 + y_offset)
-        y2_step = min(course_width_idx, y1_step + w_step)
-        if y2_step > course_width_idx:
-            y1_step -= (y2_step - course_width_idx)
-            y2_step = course_width_idx
+    # GOAL 2: Cross first balance beam, straight
+    beam_x_start = plat_x_center + platform_size_idx // 2
+    beam_x_end = beam_x_start + beam_length_idx
+    beam_y_center = plat_y_center
+    add_beam(beam_x_start, beam_x_end, beam_y_center, beam_width_idx, beam_height)
+    goals[1, :] = [(beam_x_start + beam_x_end) // 2, beam_y_center]
+    
+    # GOAL 3: On second platform (now offset to one side, requires turn)
+    plat2_x_center = beam_x_end + platform_size_idx // 2
+    is_left = True
+    offset_y = (-alternating_offset if is_left else alternating_offset)
+    plat2_y_center = plat_y_center + offset_y
+    add_platform(plat2_x_center, plat2_y_center, platform_size_idx, platform_height)
+    goals[2, :] = [plat2_x_center, plat2_y_center]
 
-        if up:
-            height_field[x1_step:x2_step, y1_step:y2_step] = ramp_top + step_height
-            step_top = ramp_top + step_height
-        else:
-            height_field[x1_step:x2_step, y1_step:y2_step] = ramp_top - step_height
-            step_top = ramp_top - step_height
+    # GOAL 4: Second, angled balance beam (turn + beam)
+    # This beam runs at an angle requiring turning and correcting
+    angle_sign = -1 if is_left else 1
+    beam2_x_start = plat2_x_center + platform_size_idx // 2
+    beam2_x_end = beam2_x_start + beam_length_idx
+    # y ~ y0 + m(x-x0)
+    x_indices = np.arange(beam2_x_start, min(beam2_x_end, height_field.shape[0]))
+    diagonal_slope = (alternating_offset / beam_length_idx) * angle_sign
+    beam2_y_centerline = plat2_y_center + diagonal_slope * (x_indices - beam2_x_start)
+    for idx, xi in enumerate(x_indices):
+        y_c = int(np.round(beam2_y_centerline[idx]))
+        y1 = max(y_c - beam_width_idx // 2, 0)
+        y2 = min(y_c + beam_width_idx // 2 + 1, height_field.shape[1])
+        height_field[xi, y1:y2] = beam_height
+    goals[3, :] = [(beam2_x_start + beam2_x_end) // 2, int(plat2_y_center + diagonal_slope * ((beam2_x_end-beam2_x_start)//2))]
 
-        # Set goals on top of steps, center in y direction
-        goals[i+1] = [x1_step + (x2_step - x1_step) // 2, (y1_step + y2_step)//2]
+    # GOAL 5: Final wide platform (centered again)
+    plat3_x_center = beam2_x_end + platform_size_idx // 2
+    plat3_y_center = m_to_idx(width / 2)
+    add_platform(plat3_x_center, plat3_y_center, platform_size_idx, platform_height)
+    goals[4, :] = [plat3_x_center, plat3_y_center]
 
-        # Advance pointer past step, add short flat landing area before next ramp
-        x_ptr = x2_step + m_to_idx(0.2)
-        # Add a small flat area between step and next ramp for transition
-        if x_ptr < course_length_idx:
-            y_flat1 = max(0, mid_y - m_to_idx(0.7) + y_offset)
-            y_flat2 = min(course_width_idx, y_flat1 + m_to_idx(1.4))
-            height_field[x2_step:x_ptr, y_flat1:y_flat2] = step_top
-
-    # Flat finish region (at goal)
-    flat_end = min(x_ptr + m_to_idx(1.2), course_length_idx)
-    height_field[x_ptr:flat_end, :] = height_field[x_ptr-1, mid_y] if x_ptr > 0 else 0
-    # Final goal is in the center near far end
-    goals[3, :] = [flat_end - m_to_idx(0.8), mid_y]
+    # Fallback: ensure all indices are inside bounds and integers
+    goals = np.clip(np.round(goals).astype(np.int16), [0,0], [height_field.shape[0]-1, height_field.shape[1]-1])
 
     return height_field, goals
