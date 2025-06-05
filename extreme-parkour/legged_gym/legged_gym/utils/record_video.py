@@ -51,7 +51,7 @@ class MultiCamVideo(gym.Wrapper):
         super().close()
 
 
-def get_camera_coords(col_idx, row_idx, cam_height=4.0):
+def get_camera_coords(col_idx, row_idx, cam_height=5.75):
     """
     Get camera position and rotation parameters for a specific terrain cell.
     
@@ -64,14 +64,14 @@ def get_camera_coords(col_idx, row_idx, cam_height=4.0):
     """
 
     all_configs = {
-        ((0,1), 0): ((-14, 11.25, cam_height), (1.0, 0.0, 0.175, 0.0)),
-        ((2,3), 0): ((-4.0, 19.5, cam_height), (1.0, 0.0, 0.175, 0.0)),
-        ((0,1), 1): ((-5.0, 5.0, cam_height), (1.0, 0.0, 0.175, 0.0)),
-        ((2,3), 1): ((-17.5, 8.0, cam_height), (1.0, 0.0, 0.175, 0.0)),
-        ((0,1), 2): ((-17.5, 8.0, cam_height), (1.0, 0.0, 0.175, 0.0)),
-        ((2,3), 2): ((-17.5, 8.0, cam_height), (1.0, 0.0, 0.175, 0.0)),
-        ((0,1), 3): ((-17.5, 8.0, cam_height), (1.0, 0.0, 0.175, 0.0)),
-        ((2,3), 3): ((-17.5, 8.0, cam_height), (1.0, 0.0, 0.175, 0.0)),
+        ((0,1), 0): ((-13.5, 11.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        ((2,3), 0): ((-3.5, 19.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        ((0,1), 1): ((-1.5, 6.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        ((2,3), 1): ((8.5, 14.25, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        ((0,1), 2): ((10.75, 1.25, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        ((2,3), 2): ((20.5, 9.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        ((0,1), 3): ((22.6, -3.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        ((2,3), 3): ((32.75, 4.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
     }
 
     return {

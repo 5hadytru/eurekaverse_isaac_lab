@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A sequence of low, narrow balance beams crossing a shallow trench, testing precise paw placement and balancing."""
+    """Series of sloped ramps with narrow bridges in between to test balance, incline walking, and transitions."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,69 +11,97 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((5, 2))
 
-    # Set spawn area to flat ground, always at z=0
-    spawn_length = m_to_idx(2)
-    height_field[:spawn_length, :] = 0
+    # --- Course parameters ---
+    # Central course axis, all obstacles centered in y
+    mid_y = m_to_idx(width / 2)
+    field_L = m_to_idx(length)
+    field_W = m_to_idx(width)
 
-    # The trench: a "pit" that runs through the course, except for the start and end
-    trench_depth = -0.19 - 0.21 * difficulty   # Up to -0.4m at maximum difficulty
-    trench_start_x = spawn_length
-    trench_end_x = m_to_idx(length-1)
-    height_field[trench_start_x:trench_end_x, :] = trench_depth
+    # Each segment: Ramp up (ascend), narrow bridge (flat), ramp down (descend), repeat
 
-    # Plan the number and position of the balance beams
-    n_beams = 4
-    # Make sure beam + gap fits into trench (leave final ~1m for flat ground)
-    beam_total_zone = length - 3    # subtract spawn + landing length
-    beam_zone_per_beam = beam_total_zone / n_beams
+    # Ramps: longer/easier at low difficulty, steeper and shorter at high difficulty
+    ramp_height = 0.18 + 0.26 * difficulty         # total up/down height (meters)
+    ramp_length = 1.5 - 0.7 * difficulty           # meters
+    ramp_len_idx = m_to_idx(ramp_length)
+    ramp_height_idx = ramp_height                  # height in meters (no need to quantize)
+    ramp_width = 1.3 - 0.5 * difficulty            # ramps get slightly narrower as difficulty increases
+    ramp_W = m_to_idx(ramp_width)
 
-    # Beams parameters
-    beam_length = 0.8 + 0.8 * (1 - difficulty)     # Shorter beams at higher difficulty (min 0.8m, max 1.6m)
-    min_beam_width = 0.13 + 0.07 * (1 - difficulty) # Narrower beams at higher difficulty (min 0.13m, max 0.2m)
-    beam_height = 0.11 + 0.12 * difficulty         # Beams just above trench at low diff, to 0.23m above at hard
+    # Bridge: short, flat, and narrow, but always ≥0.45m wide
+    bridge_length = 0.7 + 0.3 * difficulty         # meters
+    bridge_len_idx = m_to_idx(bridge_length)
+    bridge_width = max(0.45, 0.7 - 0.25 * difficulty)
+    bridge_W = m_to_idx(bridge_width)
 
-    # Place beams, interspersed with random gaps
-    mid_y = m_to_idx(width/2)
-    current_x = trench_start_x
-    beam_indices = []
-    for b in range(n_beams):
-        # Offset center of beam slightly to meander path
-        c_y = mid_y + random.randint(-m_to_idx(0.5), m_to_idx(0.5))
-        # Beam length and width (randomize a bit for realism)
-        blen = m_to_idx(beam_length + random.uniform(-0.1, 0.1))
-        bwidth = m_to_idx(min_beam_width + random.uniform(0, 0.09))
-        half_w = bwidth//2
+    # Safety margins
+    safety_margin = m_to_idx(0.15)                 # always a small margin from field edge
 
-        # Choose start/end for this beam segment
-        beam_start_x = current_x + m_to_idx(0.1)   # small buffer
-        beam_end_x = min(beam_start_x + blen, trench_end_x - m_to_idx((n_beams-b-1)*beam_zone_per_beam))
-        y1 = max(0, c_y - half_w)
-        y2 = min(m_to_idx(width), c_y + half_w)
+    spawn_x = m_to_idx(1.0)
+    # Make sure first ramp starts after safe area
+    cur_x = max(m_to_idx(2.0), spawn_x + m_to_idx(0.2))
 
-        # Place the beam
-        height_field[beam_start_x:beam_end_x, y1:y2] = beam_height
+    # Start: Flat area for spawn, no obstacles
+    height_field[:cur_x, :] = 0
+    goals[0] = [spawn_x, mid_y]  # First goal is straight ahead from spawn
 
-        # Remember the beam's center for goal placement
-        beam_center_x = int((beam_start_x + beam_end_x) / 2)
-        beam_center_y = int((y1 + y2) / 2)
-        beam_indices.append((beam_center_x, beam_center_y))
+    # In total, fit 4 ramp-bridge segments in the 12 m course (5th goal is end of last ramp)
+    ramp_bridge_segs = 4
+    segs = []
+    for i in range(ramp_bridge_segs):
+        # Compute y-center for this segment; allow a mild zig-zag with up to ±0.5m offset
+        seg_y_offset = int(round((random.uniform(-0.5, 0.5) * (1-difficulty)) * (field_W / width)))
 
-        # Advance to next zone, leaving a gap (pit) between beams
-        gap_len = m_to_idx(beam_zone_per_beam) - blen
-        gap = max(m_to_idx(0.45), min(m_to_idx(1.6), gap_len + random.randint(-m_to_idx(0.1), m_to_idx(0.1))))
-        current_x = int(beam_end_x + gap)
-        if current_x > trench_end_x - m_to_idx(beam_zone_per_beam):
-            break  # End of trench
+        # --- Ascending ramp ---
+        ramp_start_x = cur_x
+        ramp_end_x = ramp_start_x + ramp_len_idx
+        y1 = max(safety_margin, mid_y + seg_y_offset - ramp_W // 2)
+        y2 = min(field_W - safety_margin, mid_y + seg_y_offset + ramp_W // 2)
 
-    # Landing area at end (flat ground)
-    landing_x_start = min(current_x, m_to_idx(length-1))
-    height_field[landing_x_start:, :] = 0
+        # Linear ramp up in x-axis
+        for xi in range(ramp_start_x, ramp_end_x):
+            rel = (xi - ramp_start_x) / max(1, (ramp_end_x - ramp_start_x - 1))
+            height_field[xi, y1:y2] = rel * ramp_height_idx
 
-    # Set goals:
-    # 0: spawn
-    goals[0] = [m_to_idx(1.0), m_to_idx(width/2)]
-    # 1-4: center of each beam
-    for i, (cx, cy) in enumerate(beam_indices[:4]):
-        goals[i+1] = [cx, cy]
+        # --- Flat, narrow bridge at top ---
+        bridge_start_x = ramp_end_x
+        bridge_end_x = bridge_start_x + bridge_len_idx
+        by1 = max(safety_margin, mid_y + seg_y_offset - bridge_W // 2)
+        by2 = min(field_W - safety_margin, mid_y + seg_y_offset + bridge_W // 2)
+        height_field[bridge_start_x:bridge_end_x, by1:by2] = ramp_height_idx
+        # Set pit under and around bridge (using negative heights), except bridge zone
+        pit_depth = -0.25 - 0.25 * difficulty
+        # To ensure robot stays on bridge, create pit wider than bridge:
+        pit_W = int(round(1.0 + 1.0 * difficulty) / field_resolution)
+        pit_y1 = max(0, int((by1 + by2) / 2) - pit_W // 2)
+        pit_y2 = min(field_W, int((by1 + by2) / 2) + pit_W // 2)
+        height_field[bridge_start_x:bridge_end_x, :pit_y1] = pit_depth
+        height_field[bridge_start_x:bridge_end_x, pit_y2:] = pit_depth
+
+        # --- Descending ramp ---
+        rampd_start_x = bridge_end_x
+        rampd_end_x = rampd_start_x + ramp_len_idx
+        for xi in range(rampd_start_x, rampd_end_x):
+            rel = 1 - (xi - rampd_start_x) / max(1, (rampd_end_x - rampd_start_x - 1))
+            height_field[xi, y1:y2] = rel * ramp_height_idx
+
+        # Set segment for goal, place in center of bridge (goal 1-4)
+        if i < 3:
+            goal_x = bridge_start_x + bridge_len_idx // 2
+            goal_y = (by1 + by2) // 2
+            goals[i+1] = [goal_x, goal_y]
+
+        segs.append((ramp_start_x, ramp_end_x, bridge_start_x, bridge_end_x, rampd_start_x, rampd_end_x, y1, y2, by1, by2))
+        # Next segment starts after downward ramp, with a small buffer
+        buffer = m_to_idx(0.18 + 0.2 * difficulty)
+        cur_x = rampd_end_x + buffer
+
+    # Set final (5th) goal at end of last down-ramp, centered
+    last_seg = segs[-1]
+    final_goal_x = min(field_L-1, (last_seg[5] + m_to_idx(0.5)))
+    final_goal_y = (last_seg[6] + last_seg[7]) // 2
+    goals[4] = [final_goal_x, final_goal_y]
+
+    # Set any space after last ramp to level ground at zero
+    height_field[cur_x:, :] = 0
 
     return height_field, goals

@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A balance beam course: Long, narrow beams (at ground level) and wide low platforms alternating, requiring the robot to walk steadily, turn, and step between beams and platforms."""
+    """A sequence of see-saw (tilting ramp) obstacles that test balance and adaptability: the quadruped must cross tilting ramps of varying steepness and width."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
@@ -11,88 +11,84 @@ def set_terrain(length, width, field_resolution, difficulty):
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((5, 2))
 
-    # Course constants (robot size: 0.645 x 0.28 m)
-    beam_width = (0.3 + 0.25 * (1-difficulty))        # 0.55m at easy, 0.3m at hard
-    beam_width = max(beam_width, 0.3)
-    beam_width_idx = m_to_idx(beam_width)
-    beam_length = 2.2 + 1.5 * difficulty              # 2.2m at easy, up to 3.7m at hard
-    beam_length_idx = m_to_idx(beam_length)
-    platform_size = 1.4 - 0.6 * difficulty            # 1.4m wide at easy, down to 0.8m at hard
-    platform_size_idx = m_to_idx(platform_size)
-    beam_height = 0.05 + 0.08 * difficulty            # 5cm at easy, 13cm at hard
-    platform_height = 0.00                            # flush with ground
-
-    course_x = m_to_idx(1.8)  # Start after spawn (avoid [0,2m))
-    alternating_offset = m_to_idx(1.3)                # Lateral offset for turns
-
-    cur_y_idx = m_to_idx(width / 2)                   # Center line
-    width_idx = m_to_idx(width)
-
-    # Helper for adding beam ("balance beam" obstacle)
-    def add_beam(x_start, x_end, y_center, width_idx, height):
-        y1 = max(y_center - width_idx // 2, 0)
-        y2 = min(y_center + width_idx // 2 + 1, height_field.shape[1])
-        x1 = int(x_start)
-        x2 = int(min(x_end, height_field.shape[0]))
-        height_field[x1:x2, y1:y2] = height
-
-    # Helper for adding platform (wider square/circular area)
-    def add_platform(x_center, y_center, size_idx, height):
-        half = size_idx // 2
-        x1 = int(max(x_center - half, 0))
-        x2 = int(min(x_center + half + 1, height_field.shape[0]))
-        y1 = int(max(y_center - half, 0))
-        y2 = int(min(y_center + half + 1, height_field.shape[1]))
-        height_field[x1:x2, y1:y2] = height
-
-    # Set spawn area to flat ground
+    # Parameters for see-saw obstacle sequence
+    mid_y = m_to_idx(width) // 2
     spawn_length = m_to_idx(2.0)
-    height_field[:spawn_length, :] = 0
+    n_seesaws = 3
+    # Difficulty shapes ramp height, slope, and narrowing
+    base_ramp_len = 1.8 - 0.7 * difficulty
+    min_ramp_w = 1.2 - 0.6 * difficulty
+    max_theta = np.deg2rad(12 + 13 * difficulty)  # Ramp max tilt angle: 12 deg (easy) to 25 deg (hard)
 
-    # GOAL 1: On first platform, after spawn
-    plat_x_center = course_x
-    plat_y_center = cur_y_idx
-    add_platform(plat_x_center, plat_y_center, platform_size_idx, platform_height)
-    goals[0, :] = [plat_x_center, plat_y_center]
+    gap_between = 0.6 - 0.3 * difficulty  # Smaller gaps for harder
+    gap_between = max(gap_between, 0.2)
+    gap_height = -0.20 - 0.5 * difficulty   # Slight pit below ramps
 
-    # GOAL 2: Cross first balance beam, straight
-    beam_x_start = plat_x_center + platform_size_idx // 2
-    beam_x_end = beam_x_start + beam_length_idx
-    beam_y_center = plat_y_center
-    add_beam(beam_x_start, beam_x_end, beam_y_center, beam_width_idx, beam_height)
-    goals[1, :] = [(beam_x_start + beam_x_end) // 2, beam_y_center]
-    
-    # GOAL 3: On second platform (now offset to one side, requires turn)
-    plat2_x_center = beam_x_end + platform_size_idx // 2
-    is_left = True
-    offset_y = (-alternating_offset if is_left else alternating_offset)
-    plat2_y_center = plat_y_center + offset_y
-    add_platform(plat2_x_center, plat2_y_center, platform_size_idx, platform_height)
-    goals[2, :] = [plat2_x_center, plat2_y_center]
+    start_x = spawn_length
+    noise_range = m_to_idx(0.3 + 0.2 * difficulty)
+    terrain_shape = height_field.shape
 
-    # GOAL 4: Second, angled balance beam (turn + beam)
-    # This beam runs at an angle requiring turning and correcting
-    angle_sign = -1 if is_left else 1
-    beam2_x_start = plat2_x_center + platform_size_idx // 2
-    beam2_x_end = beam2_x_start + beam_length_idx
-    # y ~ y0 + m(x-x0)
-    x_indices = np.arange(beam2_x_start, min(beam2_x_end, height_field.shape[0]))
-    diagonal_slope = (alternating_offset / beam_length_idx) * angle_sign
-    beam2_y_centerline = plat2_y_center + diagonal_slope * (x_indices - beam2_x_start)
-    for idx, xi in enumerate(x_indices):
-        y_c = int(np.round(beam2_y_centerline[idx]))
-        y1 = max(y_c - beam_width_idx // 2, 0)
-        y2 = min(y_c + beam_width_idx // 2 + 1, height_field.shape[1])
-        height_field[xi, y1:y2] = beam_height
-    goals[3, :] = [(beam2_x_start + beam2_x_end) // 2, int(plat2_y_center + diagonal_slope * ((beam2_x_end-beam2_x_start)//2))]
+    cur_x = start_x
+    obs_half_w = m_to_idx(min_ramp_w / 2)
+    platform_height = 0  # Flat between seesaws 
 
-    # GOAL 5: Final wide platform (centered again)
-    plat3_x_center = beam2_x_end + platform_size_idx // 2
-    plat3_y_center = m_to_idx(width / 2)
-    add_platform(plat3_x_center, plat3_y_center, platform_size_idx, platform_height)
-    goals[4, :] = [plat3_x_center, plat3_y_center]
+    # Make sure spawn area is flat
+    height_field[0:spawn_length, :] = 0
+    goals[0] = [m_to_idx(1.2), mid_y]
 
-    # Fallback: ensure all indices are inside bounds and integers
-    goals = np.clip(np.round(goals).astype(np.int16), [0,0], [height_field.shape[0]-1, height_field.shape[1]-1])
+    ramp_params = []
+    # Generate seesaws
+    for i in range(n_seesaws):
+        ramp_len = m_to_idx(base_ramp_len + random.uniform(-0.1, 0.1))
+        ramp_w = m_to_idx(min_ramp_w + random.uniform(0, 0.1))
+        half_w = ramp_w // 2
+        theta = random.uniform(0.7, 1.0) * max_theta * ((-1) ** i)  # Alternate ramp up/down
+        pivot_rel = random.uniform(0.45, 0.55)   # Pivot point is near ramp center
+
+        # Center the ramp in y, allow some y jitter for variety
+        ramp_center_y = mid_y + random.randint(-noise_range, noise_range)
+        ramp_y1 = max(ramp_center_y - half_w, 0)
+        ramp_y2 = min(ramp_center_y + half_w, terrain_shape[1])
+
+        ramp_x1 = cur_x
+        ramp_x2 = cur_x + ramp_len
+
+        # Calculate ramp profile
+        pivot_x = int(ramp_x1 + pivot_rel * (ramp_x2 - ramp_x1))
+        pre_len = pivot_x - ramp_x1
+        post_len = ramp_x2 - pivot_x
+
+        # Left side slopes up, right side slopes down (see-saw structure)
+        for x in range(ramp_x1, ramp_x2):
+            if x < pivot_x:
+                z = platform_height + np.tan(theta) * ((x - ramp_x1) * field_resolution)
+            else:
+                z = platform_height + np.tan(-theta) * ((x - pivot_x) * field_resolution)
+            height_field[x, ramp_y1:ramp_y2] = z
+        ramp_params.append((ramp_x1, ramp_x2, ramp_y1, ramp_y2, pivot_x, theta))
+
+        # Make a pit between seesaws (forces to get on ramp, and punishes falling)
+        pit_x1 = ramp_x2
+        pit_x2 = int(ramp_x2 + m_to_idx(gap_between))
+        height_field[pit_x1:pit_x2, :] = gap_height
+
+        # Next X location
+        cur_x = pit_x2
+        platform_height = 0  # reset
+
+        # Place a goal just after each seesaw's end
+        if i < 2:
+            g_y = min(max(ramp_center_y, m_to_idx(0.7)), terrain_shape[1] - m_to_idx(0.7))
+            goals[i+1] = [min(ramp_x2 + m_to_idx(0.2), terrain_shape[0]-1), g_y]
+        else:
+            # Last seesaw, goal on end
+            goals[i+1] = [min(ramp_x2 + m_to_idx(0.2), terrain_shape[0]-1), ramp_center_y]
+
+    # Fill the last stretch with a flat, accessible platform leading to final goal
+    last_platform_x1 = min(cur_x, terrain_shape[0])
+    height_field[last_platform_x1:, :] = 0
+
+    # Make the final goal at the end of the course
+    goals[4] = [terrain_shape[0] - m_to_idx(0.6), mid_y]
 
     return height_field, goals

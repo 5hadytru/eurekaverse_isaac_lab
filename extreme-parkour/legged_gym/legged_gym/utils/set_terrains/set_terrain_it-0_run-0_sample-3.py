@@ -2,69 +2,88 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Five staggered low walls the robot must step over at angles, testing precise foot placement and limb high-stepping."""
+    """Stepping stones: Repeated narrow, slightly offset, raised blocks across a pond for precise foot placement and balance."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
-    
+
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((5, 2))
 
-    # Wall parameters
-    n_walls = 5
-    wall_length = 1.4 - 0.25 * difficulty   # walls get shorter as difficulty increases (more precise steps)
-    wall_width = 0.25 + 0.25 * difficulty   # walls get wider as difficulty increases (can't step around)
-    wall_height = 0.08 + 0.15 * difficulty  # up to 0.23 m step
-    
-    gap_between = 1.05 + 0.3 * (1-difficulty)   # closer together at higher diff
-    wall_clearance_from_edge = 0.7
-
-    wall_length_idx = m_to_idx(wall_length)
-    wall_width_idx = m_to_idx(wall_width)
-    gap_between_idx = m_to_idx(gap_between)
-    wall_clearance_idx = m_to_idx(wall_clearance_from_edge)
-    course_length_idx = m_to_idx(length)
+    # Constants for obstacle construction
+    spawn_x = m_to_idx(1)
+    pond_start_x = m_to_idx(2)             # Area after which obstacles begin
+    pond_end_x = m_to_idx(length-1.0)      # Keep margins at both ends
     course_width_idx = m_to_idx(width)
+    stone_min_length, stone_max_length = 0.45, 0.7
+    stone_min_width, stone_max_width = 0.4, 0.6
+    stone_min_h, stone_max_h = 0.04, 0.12
 
-    # Offsets to stagger the walls side to side (positive and negative y-offsets alternately)
-    max_offset = m_to_idx(0.9)  # keeps wall inside course
-    stagger_seq = [0, max_offset, -max_offset, max_offset, -max_offset]  # zigzag
-    
-    # The x position of the first wall, make sure not to interfere with spawn area at x=0:2.0m
-    x0 = m_to_idx(2.2)
+    # Scale above to difficulty
+    n_stones = 5 + int(difficulty * 4)     # 5 to 9 stones
+    pond_depth = 0.10 + 0.4*difficulty     # "Water"/pit is deeper at high difficulty
 
-    def place_wall(center_x, center_y, wall_idx):
-        """Places a wall with its center at (center_x, center_y)"""
-        x1 = int(center_x - wall_length_idx//2)
-        x2 = int(center_x + wall_length_idx//2)
-        y1 = int(max(center_y - wall_width_idx//2, 0))
-        y2 = int(min(center_y + wall_width_idx//2, course_width_idx-1))
-        height_field[x1:x2, y1:y2] = wall_height
-        
-        # Mark the goal after the wall (a little past the wall in x, at the same y)
-        gx = min(x2 + m_to_idx(0.37), course_length_idx-1)
-        goals[wall_idx] = [gx, int(center_y)]
+    # Build "water" (pit) from pond_start_x to pond_end_x
+    height_field[pond_start_x:pond_end_x, :] = -pond_depth
 
-    # Flat start platform
-    height_field[:x0, :] = 0.0
-    goals[0] = [m_to_idx(1.0), course_width_idx // 2]  # initial goal halfway down spawn zone
+    # Generate stepping stone centers and dims
+    step_xs = np.linspace(pond_start_x + m_to_idx(0.7), pond_end_x - m_to_idx(0.8), n_stones)
+    step_xs = [int(round(x)) for x in step_xs]
 
-    cur_x = x0
     mid_y = course_width_idx // 2
+    max_offset = m_to_idx(0.7 + (0.4 * difficulty))  # Stones can be offset by up to 0.7-1.1 meters at high difficulty
+    stone_ys = [mid_y]
+    for i in range(1, n_stones):
+        prev = stone_ys[-1]
+        offset = int(round(random.uniform(-max_offset, max_offset)))
+        # constrain y so that stone stays within bounds
+        new_y = min(max(course_width_idx//4, prev + offset), 3*course_width_idx//4)
+        stone_ys.append(new_y)
+    # Insert the first stepping stone just in front of the pond, for a smooth entry
+    stone_ys[0] = mid_y
 
-    for i in range(1, n_walls+1):
-        # Stagger (zig-zag) the wall left and right from center
-        stagger_y = mid_y + stagger_seq[i-1]
-        place_wall(cur_x, stagger_y, i if i<5 else 4)  # clamp idx for the last one
-        
-        # The gap leaves enough space for the robot to step down after the wall
-        cur_x += wall_length_idx + gap_between_idx
+    # Place stepping stones
+    stone_rects = []
+    for i, (stone_x, stone_y) in enumerate(zip(step_xs, stone_ys)):
+        # Size tightens as difficulty increases
+        l = stone_min_length + (stone_max_length-stone_min_length)*(1-difficulty)
+        w = stone_min_width + (stone_max_width-stone_min_width)*(1-difficulty)
+        # Slightly randomize size
+        l += random.uniform(-0.08, 0.08)
+        w += random.uniform(-0.08, 0.08)
+        l_idx = max(m_to_idx(l), m_to_idx(0.4))
+        w_idx = max(m_to_idx(w), m_to_idx(0.4))
+        h = stone_min_h + (stone_max_h-stone_min_h)*difficulty + random.uniform(0.00, 0.08)
+        # Place stone rectangle (clamp within boundaries)
+        x1 = max(stone_x-l_idx//2, pond_start_x)
+        x2 = min(stone_x+l_idx//2, m_to_idx(length))
+        y1 = max(stone_y-w_idx//2, 0)
+        y2 = min(stone_y+w_idx//2, course_width_idx)
+        height_field[x1:x2, y1:y2] = h
+        stone_rects.append(((x1, x2), (y1, y2)))
+    
+    # Place first and last "platforms" (for start/finish outside pond)
+    dock_w = m_to_idx(2.0)
+    dock_l = m_to_idx(0.8)
+    # Start platform:
+    x1 = spawn_x - dock_l if (spawn_x - dock_l) > 0 else 0
+    x2 = pond_start_x
+    y1 = (mid_y - dock_w//2)
+    y2 = (mid_y + dock_w//2)
+    height_field[x1:x2, y1:y2] = 0
+    # End platform:
+    x1 = pond_end_x
+    x2 = m_to_idx(length)
+    height_field[x1:x2, y1:y2] = 0
 
-    # Ensure remaining ground after last wall is flat for terminal reward
-    x_end = min(cur_x + m_to_idx(1.2), course_length_idx)
-    height_field[cur_x:x_end, :] = 0.0
-    # Final goal is well past last wall, on centerline
-    goals[4] = [min(x_end-1, course_length_idx-1), mid_y]
+    # Set goals:
+    # [0] Spawn point, [1-3] at stones 1, n//2, n-1, [4] at course end
+    goals[0] = [float(spawn_x+m_to_idx(0.5)), float(mid_y)]
+    goals[1] = [float(step_xs[1]), float(stone_ys[1])]
+    goals[2] = [float(step_xs[n_stones//2]), float(stone_ys[n_stones//2])]
+    goals[3] = [float(step_xs[-2]), float(stone_ys[-2])]
+    # Final goal on end platform, at center
+    goals[4] = [float((pond_end_x + x2)//2), float(mid_y)]
 
     return height_field, goals

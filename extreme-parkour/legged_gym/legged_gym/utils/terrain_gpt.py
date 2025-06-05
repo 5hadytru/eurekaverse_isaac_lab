@@ -103,6 +103,13 @@ class TrimeshTerrainImporter:
 
 class Terrain:
     def __init__(self, cfg: CustomTerrainCfg, num_robots) -> None:
+        
+        
+        cfg.num_goals = 5
+        self.num_goals = cfg.num_goals
+
+
+        
         self.cfg = cfg
         self.num_robots = num_robots
         self.type = cfg.mesh_type
@@ -261,6 +268,7 @@ class Terrain:
             env_origin_z = np.max(terrain.height_field_raw[x1:x2, y1:y2])*terrain.vertical_scale
         self.env_origins[i, j] = [env_origin_x, env_origin_y, env_origin_z]
         self.terrain_type[i, j] = terrain.idx
+        # print(self.goals[i, j, :, :2].shape, terrain.goals.shape, [i * self.env_length, j * self.env_width])
         self.goals[i, j, :, :2] = terrain.goals + [i * self.env_length, j * self.env_width]
 
 def check_terrain_feasibility(terrain, allow_flat_terrain=False):
