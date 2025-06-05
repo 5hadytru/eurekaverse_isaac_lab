@@ -1,4 +1,4 @@
-We trained a quadruped policy to perform parkour on the obstacle course created by the generation code above (as well as others), and we tracked the values of individual reward components as well as other metrics such as the number of goals reached (out of 4), episode length, and the rate of edge violations (feet too close to edge of obstacles):
+We trained a quadruped policy to perform parkour on the obstacle course created by the generation code above (as well as others), and we tracked the values of individual reward components as well as other metrics such as the number of goals reached (out of 5), episode length, and the rate of edge violations (feet too close to edge of obstacles):
 <INSERT POLICY STATISTICS HERE>
 
 We have also computed statistics for the terrain height of the direct path between goals across multiple difficulties. Note that this is a heuristical shortest-path between goals that approximates the locations an optimal quadruped would traverse. The statistics do not reflect the actual path taken by the quadruped policy, nor does it include the height of gaps, pits, and other obstacles that the quadruped would not step on:

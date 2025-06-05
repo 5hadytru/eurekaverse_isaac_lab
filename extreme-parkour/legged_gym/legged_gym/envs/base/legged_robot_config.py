@@ -221,12 +221,13 @@ class CustomTerrainCfg:
 
     selected = False # select a unique terrain type and pass all arguments
     terrain_kwargs = None # Dict of arguments for selected terrain
-    max_init_terrain_level = 2 # starting curriculum state
-    terrain_length = 9
+    max_init_terrain_level = 1 # starting curriculum state
+    terrain_length = 12
     terrain_width = 4
     num_rows = 4 # number of terrain rows (levels)  # spreaded is benifitiall !
     num_cols = 4 # number of terrain cols (types)
-    
+    num_goals = 5    
+
     terrain_dict = {"smooth slope": 0., 
                     "rough slope up": 0.0,
                     "rough slope down": 0.0,
@@ -252,8 +253,6 @@ class CustomTerrainCfg:
     # trimesh only:
     slope_treshold = 1.5# slopes above this threshold will be corrected to vertical surfaces
     origin_zero_z = True
-
-    num_goals = 4
 
 
 class CmdRanges:

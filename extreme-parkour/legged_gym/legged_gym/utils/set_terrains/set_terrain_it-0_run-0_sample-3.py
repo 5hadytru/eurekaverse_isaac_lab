@@ -2,100 +2,108 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A sequence of alternating ramps and sidewise balance beams to challenge robot stability and precision."""
+    """A series of staggered, sloped ramps for the robot to walk up, turn and walk down, testing slope traversal and turning."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
 
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
-    goals = np.zeros((8, 2))
+    goals = np.zeros((4, 2))
 
-    # Core parameters
-    mid_y = m_to_idx(width/2)
-    field_len = m_to_idx(length)
-    field_wid = m_to_idx(width)
+    # Ramp/landing dimensions
+    ramp_length = 2.2 - 0.8 * difficulty        # ramps are shorter and steeper with difficulty
+    ramp_length_idx = m_to_idx(ramp_length)
+    ramp_width = 1.2
+    ramp_width_idx = m_to_idx(ramp_width)
+    max_ramp_height = 0.09 + 0.35 * difficulty  # ramps are higher with harder difficulty
+    slope_up = max_ramp_height / ramp_length
+    landing_length = 0.6                        # flat between ramps/at top
+    landing_length_idx = m_to_idx(landing_length)
+    landing_height = max_ramp_height
 
-    # --- Obstacle dimensions ---
-    # Ramp variables
-    min_ramp_height = 0.10 + 0.10 * difficulty    # meters
-    max_ramp_height = 0.30 + 0.25 * difficulty    # meters
-    ramp_length = 1.25 - 0.50 * difficulty        # slightly longer, shorter at high diff.
-    ramp_width = 1.2                              # meters, always >= 1 meter
-    
-    # Beam variables
-    beam_length = 1.1 + 0.5 * difficulty          # meters; longer beam at higher difficulty
-    beam_width = 0.40 + 0.15 * (1-difficulty)     # meters; wider beam at lower diff, narrower at high
-    beam_height = 0.18 + 0.18 * difficulty        # meters (robot can't just step off easily)
-    
-    # Offsets and counts
-    spawn_x = m_to_idx(2)                         # Leave spawn area clear!
-    n_obstacles = 3                               # 3 ramps, 3 beams = 6 obstacles + start & end
-    safe_margin = m_to_idx(0.3)
-    obstacle_gap = m_to_idx(0.30 + 0.40 * difficulty)  # Between obstacles
+    # Flat spawn area
+    spawn_length = m_to_idx(2)
+    mid_y = m_to_idx(width) // 2
+    height_field[0:spawn_length, :] = 0
 
-    # Helper for inserting ramp
-    def add_ramp(x0, y0, ramp_len, ramp_wid, h0, h1):
-        x0, y0 = int(x0), int(y0)
-        x1 = x0 + m_to_idx(ramp_len)
-        y1 = max(0, y0 - m_to_idx(ramp_wid/2))
-        y2 = min(field_wid, y0 + m_to_idx(ramp_wid/2))
-        for xi in range(x0, min(field_len, x1)):
-            advance = (xi - x0) / max(1, x1-x0-1)
-            h = (1-advance)*h0 + advance*h1
-            height_field[xi, y1:y2] = h
-    
-    # Helper for inserting beam (straight, sideways for fun)
-    def add_beam(x0, y0, beam_len, beam_wid, beam_h, angle_deg=0):
-        # Beam extends along angle from (x0, y0)
-        angle = np.deg2rad(angle_deg)
-        dx = np.cos(angle)
-        dy = np.sin(angle)
-        nsteps = m_to_idx(beam_len)
-        bwid = m_to_idx(beam_wid)
-        for step in range(nsteps):
-            xi = int(round(x0 + dx*step))
-            yi_c = int(round(y0 + dy*step))
-            y1 = max(0, yi_c - bwid//2)
-            y2 = min(field_wid, yi_c + bwid//2)
-            if 0 <= xi < field_len:
-                height_field[xi, y1:y2] = beam_h
+    # The overall plan:
+    # - ramp up (centered), flat, turn left, ramp down (left), flat, ramp up (right), flat, ramp down (exit), flat exit
+    # - Goals at key points: bottom of first ramp, top turning flat, top of third ramp, exit flat
 
-    # Initial flat spawn
-    height_field[:spawn_x, :] = 0.0
-    goals[0] = [spawn_x-m_to_idx(0.5), mid_y]
+    # RAMP 1: Upward, centered
+    ramp1_start_x = spawn_length
+    ramp1_end_x = ramp1_start_x + ramp_length_idx
+    ramp1_center_y = mid_y
+    ramp1_y1 = ramp1_center_y - ramp_width_idx // 2
+    ramp1_y2 = ramp1_center_y + ramp_width_idx // 2
 
-    cur_x = spawn_x
-    for i in range(n_obstacles):
-        # RAMP
-        rh0 = 0.0
-        rh1 = np.random.uniform(min_ramp_height, max_ramp_height)
-        # Place ramp straight, left-to-right
-        add_ramp(cur_x, mid_y, ramp_length, ramp_width, rh0, rh1)
-        # Goal top of ramp
-        ramp_goal_x = cur_x + m_to_idx(ramp_length * 0.8)
-        goals[1+i*2] = [ramp_goal_x, mid_y]
-        cur_x += m_to_idx(ramp_length) + safe_margin
+    # Linearly increase the height for ramp up
+    for i in range(ramp1_length := ramp1_end_x - ramp1_start_x):
+        height = (i / max(1, ramp1_length-1)) * max_ramp_height
+        height_field[ramp1_start_x + i, ramp1_y1:ramp1_y2] = height
 
-        # BEAM
-        # Beams alternate offset left/right of center
-        beam_angle = 8 * (1 if i%2==0 else -1)       # Slight beam angle, increases challenge
-        # Beam lateral offset at higher diff
-        beam_center_y = mid_y + int((i%2)*2-1) * int(beam_width*1.2 * (0.25 + 0.75*difficulty))
-        add_beam(cur_x, beam_center_y, beam_length, beam_width, beam_height, angle_deg=beam_angle)
-        # Next goal: center of beam
-        beam_goal_x = cur_x + m_to_idx(beam_length*0.5)
-        goals[2+i*2] = [beam_goal_x, beam_center_y]
-        cur_x += m_to_idx(beam_length) + obstacle_gap
+    # LANDING/TURN PLATFORM 1 (at top, left side)
+    turn_landing1_x_start = ramp1_end_x
+    turn_landing1_x_end = turn_landing1_x_start + landing_length_idx
+    turn1_y_center = ramp1_center_y - m_to_idx(0.8)
+    turn1_y1 = turn1_y_center - ramp_width_idx // 2
+    turn1_y2 = turn1_y_center + ramp_width_idx // 2
+    height_field[turn_landing1_x_start:turn_landing1_x_end, turn1_y1:turn1_y2] = landing_height
 
-    # Final goal, flat ground after last obstacle
-    final_x = min(cur_x + m_to_idx(0.8), field_len - 1)
-    height_field[cur_x:, :] = 0.0
-    goals[7] = [final_x, mid_y]
+    # RAMP 2: Downward, left side (left lane)
+    ramp2_start_x = turn_landing1_x_end
+    ramp2_end_x = ramp2_start_x + ramp_length_idx
+    ramp2_y1 = turn1_y1
+    ramp2_y2 = turn1_y2
 
-    # Clamp all goals to inside height_field
-    for i in range(8):
-        goals[i,0] = min(max(0, goals[i,0]), height_field.shape[0]-1)
-        goals[i,1] = min(max(0, goals[i,1]), height_field.shape[1]-1)
+    for i in range(ramp2_length := ramp2_end_x - ramp2_start_x):
+        height = landing_height - (i / max(1, ramp2_length-1)) * max_ramp_height
+        height_field[ramp2_start_x + i, ramp2_y1:ramp2_y2] = height
+
+    # LANDING/TURN PLATFORM 2 (bottom, right side)
+    turn_landing2_x_start = ramp2_end_x
+    turn_landing2_x_end = turn_landing2_x_start + landing_length_idx
+    turn2_y_center = ramp2_y1 + m_to_idx(1.4)
+    turn2_y1 = turn2_y_center - ramp_width_idx // 2
+    turn2_y2 = turn2_y_center + ramp_width_idx // 2
+    height_field[turn_landing2_x_start:turn_landing2_x_end, turn2_y1:turn2_y2] = 0
+
+    # RAMP 3: Upward again, right lane
+    ramp3_start_x = turn_landing2_x_end
+    ramp3_end_x = ramp3_start_x + ramp_length_idx
+    ramp3_y1 = turn2_y1
+    ramp3_y2 = turn2_y2
+
+    for i in range(ramp3_length := ramp3_end_x - ramp3_start_x):
+        height = (i / max(1, ramp3_length-1)) * max_ramp_height
+        height_field[ramp3_start_x + i, ramp3_y1:ramp3_y2] = height
+
+    # LANDING/TURN PLATFORM 3 (top, near center again)
+    turn_landing3_x_start = ramp3_end_x
+    turn_landing3_x_end = turn_landing3_x_start + landing_length_idx
+    turn3_y_center = turn2_y_center - m_to_idx(1.2)
+    turn3_y1 = turn3_y_center - ramp_width_idx // 2
+    turn3_y2 = turn3_y_center + ramp_width_idx // 2
+    height_field[turn_landing3_x_start:turn_landing3_x_end, turn3_y1:turn3_y2] = landing_height
+
+    # RAMP 4: Down exit, center/right
+    ramp4_start_x = turn_landing3_x_end
+    ramp4_end_x = ramp4_start_x + ramp_length_idx
+    ramp4_y1 = turn3_y1
+    ramp4_y2 = turn3_y2
+
+    for i in range(ramp4_length := ramp4_end_x - ramp4_start_x):
+        height = landing_height - (i / max(1, ramp4_length-1)) * max_ramp_height
+        height_field[ramp4_start_x + i, ramp4_y1:ramp4_y2] = height
+
+    # EXIT FLAT
+    height_field[min(ramp4_end_x, height_field.shape[0]):, :] = 0
+
+    # Set the goals: (start, turn top, second top, end)
+    goals[0] = [ramp1_start_x + m_to_idx(0.3), ramp1_center_y]                 # Entry at base of first ramp
+    goals[1] = [turn_landing1_x_start + landing_length_idx//2, turn1_y_center] # Top of first climb (left turn)
+    goals[2] = [turn_landing3_x_start + landing_length_idx//2, turn3_y_center] # Top of last climb (right turn)
+    goals[3] = [min(ramp4_end_x + m_to_idx(0.5), height_field.shape[0]-1), turn3_y_center]  # End after final ramp
 
     return height_field, goals
