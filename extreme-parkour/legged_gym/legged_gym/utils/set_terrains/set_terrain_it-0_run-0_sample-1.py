@@ -2,82 +2,71 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Stepping stone course: The robot must walk across a series of narrow, staggered, flat-topped blocks ('stepping stones') over a sunken pit, testing precise limb placement and gait adaptation for lateral and forward motion."""
+    """Stepping-stone sequence: A series of narrow, alternating-offset flat pads over a deep trench to challenge precise foot placement and lateral agility."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
 
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
-    goals = np.zeros((5, 2))  # [x, y] format in quantized indices
+    goals = np.zeros((5, 2))
 
-    course_length = m_to_idx(length)
-    course_width = m_to_idx(width)
-    spawn_length = m_to_idx(2.0)
-    mid_y = course_width // 2
+    # Pad and gap configuration (stepping stones over a trench)
+    pad_length = 0.5 + 0.2 * (1-difficulty)      # pads get shorter at higher difficulty
+    pad_width = 0.5 + 0.4 * (1-difficulty)       # pads get narrower at higher difficulty
+    pad_height = 0.15 + 0.10 * difficulty        # pads become higher with difficulty
+    gap_length = 0.40 + 0.45 * difficulty        # gaps get longer at higher difficulty
 
-    # Course parameters: stepping stone settings
-    stone_width = max(0.45, 0.7 - 0.4 * difficulty)         # meters, at least 0.45m wide (wider at easy, narrow at hard)
-    stone_length = max(0.5, 0.8 - 0.3 * difficulty)         # meters, at least 0.5m long
-    stone_height = 0.02 + 0.13 * difficulty                 # meters, low at easy, up to 15cm at hard
-    stone_gap = 0.55 + 0.55 * difficulty                    # meters, forward gap between stones
-    lateral_offset_max = 0.17 + 0.23 * difficulty           # meters, how far side-to-side the stones are staggered
+    pad_length_idx = m_to_idx(pad_length)
+    pad_width_idx = m_to_idx(pad_width)
+    pad_height = float(pad_height)
+    gap_length_idx = m_to_idx(gap_length)
 
-    # Quantize values
-    stone_width_idx = m_to_idx(stone_width)
-    stone_length_idx = m_to_idx(stone_length)
-    stone_gap_idx = m_to_idx(stone_gap)
-    lateral_offset_idx = m_to_idx(lateral_offset_max)
+    # Terrain bounds
+    total_x = m_to_idx(length)
+    total_y = m_to_idx(width)
 
-    # Create a pit (negative height) across most of the course
-    height_field[spawn_length:,:] = -0.6 - 0.2 * difficulty   # lower at higher difficulty (force stepping)
-    # Make the spawn area flat for a safe start
-    height_field[:spawn_length,:] = 0.
+    # Create a central trench
+    trench_depth = -1.1
+    height_field[:, :] = trench_depth
 
-    # Place initial goal (on flat ground)
-    goals[0] = [m_to_idx(1.0), mid_y]
+    # Spawn area: flat ground for spawning
+    safe_zone_idx = m_to_idx(2)
+    height_field[0:safe_zone_idx, :] = 0.0
 
-    # Plan stones: start at the end of the spawn zone, up to near the end of the course
-    n_stones = 4           # 4 stepping stones = 5 goals incl. start and finish
-    first_stone_x = spawn_length + m_to_idx(0.7)    # start the first stone just after spawn
-    stone_xs = []
-    stone_ys = []
+    # Place the stepping stones in a zig-zag manner
+    cur_x = safe_zone_idx
+    n_pads = 4
+    lateral_shifts = [0.0, 0.8, -0.9, 0.7]  # meters offset from center, zig-zag
 
-    # Alternate stone y positions to make the robot zigzag: left/right of midline
-    for i in range(n_stones):
-        x_pos = first_stone_x + i * (stone_gap_idx + stone_length_idx)
-        if x_pos + stone_length_idx > course_length - m_to_idx(0.8):
-            x_pos = course_length - m_to_idx(1.5)
-        # Lateral staggering: alternate left and right of midline, increase offset on harder difficulty
-        if i % 2 == 0:
-            y_offset = -lateral_offset_idx
-        else:
-            y_offset = lateral_offset_idx
-        # Random small jitter within reasonable bounds, to avoid excessive regularity
-        y_pos = mid_y + y_offset + random.randint(-m_to_idx(0.1), m_to_idx(0.1))
-        # Clamp position to fit within course width and ensure stone is at least on the field
-        y_pos = np.clip(y_pos, stone_width_idx//2, course_width - stone_width_idx//2)
-        stone_xs.append(x_pos)
-        stone_ys.append(y_pos)
+    for i in range(n_pads):
+        # Pad center
+        # Make sure pads aren't too close to the edge
+        pad_offset_y = lateral_shifts[i % len(lateral_shifts)] * (1 + 0.2*random.uniform(-1,1)*difficulty)
+        pad_center_y = (width / 2) + pad_offset_y
+        pad_center_y = max(pad_width/2 + 0.05, min(width - pad_width/2 - 0.05, pad_center_y))
+        # Indices
+        x1 = cur_x
+        x2 = min(total_x, x1 + pad_length_idx)
+        center_y_idx = m_to_idx(pad_center_y)
+        half_pw = pad_width_idx//2
+        y1 = max(0, center_y_idx - half_pw)
+        y2 = min(total_y, center_y_idx + half_pw)
+        # Place pad
+        height_field[x1:x2, y1:y2] = pad_height
+        # Set goal in pad center
+        pad_mid_x = (x1+x2)//2
+        goals[i] = [pad_mid_x, center_y_idx]
+        # Advance to next pad
+        cur_x = x2 + gap_length_idx
 
-        # Draw the stone block
-        x1 = int(x_pos)
-        x2 = int(x_pos + stone_length_idx)
-        y1 = int(y_pos - stone_width_idx // 2)
-        y2 = int(y_pos + stone_width_idx // 2)
-        height_field[x1:x2, y1:y2] = stone_height
+    # Final area: safe/flat finish pad
+    finish_pad_start = min(cur_x, total_x - m_to_idx(1))
+    finish_pad_end = total_x
+    height_field[finish_pad_start:finish_pad_end, :] = 0.0
+    goals[4] = [ (finish_pad_start+finish_pad_end)//2, m_to_idx(width/2) ]
 
-        # Place a goal at the center of the stone
-        goals[i+1] = [(x1 + x2)//2, (y1 + y2)//2]
-
-    # Final patch of walkable flat ground after last stone as runout for robot stop
-    final_floor_x = x2 + m_to_idx(0.7)
-    if final_floor_x < course_length:
-        height_field[final_floor_x:, :] = 0.
-
-        # Final goal at end of course (middle in y)
-        goals[4] = [min(final_floor_x + m_to_idx(0.7), course_length-1), mid_y]
-    else:
-        goals[4] = [course_length-1, mid_y]
+    # First goal is always the starting area
+    goals[0] = [ m_to_idx(1), m_to_idx(width/2) ]
 
     return height_field, goals
