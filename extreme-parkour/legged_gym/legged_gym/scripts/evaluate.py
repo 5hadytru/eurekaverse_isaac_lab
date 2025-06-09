@@ -541,7 +541,10 @@ def evaluate(args):
             plt.show()
 
     env.close()
-    env.env.close()
+    try:
+        env.env.close()
+    except:
+        pass
 
 if __name__ == '__main__':
     evaluate(args)

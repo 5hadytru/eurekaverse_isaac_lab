@@ -103,13 +103,6 @@ class TrimeshTerrainImporter:
 
 class Terrain:
     def __init__(self, cfg: CustomTerrainCfg, num_robots) -> None:
-        
-        
-        cfg.num_goals = 5
-        self.num_goals = cfg.num_goals
-
-
-        
         self.cfg = cfg
         self.num_robots = num_robots
         self.type = cfg.mesh_type

@@ -110,7 +110,7 @@ def run_evaluation(cfg, it, parallel_run_id, exptid, terrain):
         log_file.rename(f"{log_file}.old")
 
     gpu = get_freest_gpu() if not cfg.deterministic_gpu else f"cuda:{parallel_run_id % num_gpus}"
-    command = f"{python_prefix} -u {eval_script} --task {cfg.quadruped_model} --exptid {exptid} --device {gpu} --headless --max_steps {cfg.eval_steps} --num_terrain_types {cfg.num_terrain_types} --metric_granularity type"
+    command = f"{python_prefix} -u {eval_script} --task {cfg.quadruped_model} --exptid {exptid} --device {gpu} --headless --max_steps {cfg.eval_steps} --metric_granularity type"
 
     if terrain == "pre_training" or terrain == "post_training":
         command = command + f" --terrain_type it-{it}_run-{parallel_run_id}"
@@ -128,6 +128,7 @@ def run_evaluation(cfg, it, parallel_run_id, exptid, terrain):
     else:
         for k, v in cfg.terrain.items():
             command = command + f" --{k} {v}"
+        command += f" --num_terrain_types {cfg.num_terrain_types}"
 
     process = run_subprocess(command=command, log_file=log_file)
     success, timeout = wait_subprocess(process, log_file, success_log="Loading model", failure_log="Traceback", timeout=20*60)
