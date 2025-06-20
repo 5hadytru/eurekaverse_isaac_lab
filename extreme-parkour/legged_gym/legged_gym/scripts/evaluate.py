@@ -93,6 +93,14 @@ from legged_gym.envs import *
 from isaaclab.sensors import CameraCfg, TiledCameraCfg
 import isaaclab.sim as sim_utils
 
+def validate_consecutive_tuples(tuples_list):
+    for i, item in enumerate(tuples_list):
+        if isinstance(item, tuple):
+            # Check if tuple elements are consecutive ascending integers
+            for j in range(len(item) - 1):
+                if item[j+1] != item[j] + 1:
+                    raise AssertionError(f"Tuple at index {i} is not consecutive: {item}")
+    return True
 
 def add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name):
     """
@@ -177,10 +185,15 @@ def evaluate(args):
         assert args.num_terrain_types is not None, "Must provide number of terrain types since cameras are evenly distributed among them"
         assert env_cfg.terrain.num_cols % args.num_terrain_types == 0, f"Current camera setup requires equally represented variations (which won't happen here since there are assumedly 10 terrain types and {env_cfg.terrain.num_cols} columns)"
         print("[INFO] Recording videos during training.")
+
         camera_col_idxes = [(0,1), (2,3)]
         camera_row_idxes = list(range(env_cfg.terrain.num_rows))
+
+        validate_consecutive_tuples(camera_col_idxes)
+        validate_consecutive_tuples(camera_row_idxes)
+
         cam_names = []
-        idx_to_str = lambda idx: f"{idx[0]}_{idx[1]}" if isinstance(idx, tuple) else str(idx)
+        idx_to_str = lambda idx: str(idx).replace("(", "").replace(")", "").replace(", ", "_") if isinstance(idx, tuple) else str(idx)
         for col_idx in camera_col_idxes: # variation
             for row_idx in camera_row_idxes:
                 cam_name = f"cam_{idx_to_str(row_idx)}r_c{idx_to_str(col_idx)}"
@@ -204,7 +217,8 @@ def evaluate(args):
         def cam_name_to_matched_rows_and_cols(n:str):
             def get_range(nums):
                 if "_" in nums:
-                    return tuple(map(int, nums.split("_")))
+                    all_values = tuple(map(int, nums.split("_")))
+                    return (all_values[0], all_values[-1])
                 else:
                     return (int(nums), int(nums))
 

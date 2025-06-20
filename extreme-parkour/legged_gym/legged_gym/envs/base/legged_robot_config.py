@@ -222,11 +222,11 @@ class CustomTerrainCfg:
     selected = False # select a unique terrain type and pass all arguments
     terrain_kwargs = None # Dict of arguments for selected terrain
     max_init_terrain_level = 1 # starting curriculum state
-    terrain_length = 12
+    terrain_length = 18
     terrain_width = 4
-    num_rows = 4 # number of terrain rows (levels)  # spreaded is benifitiall !
-    num_cols = 4 # number of terrain cols (types)
-    num_goals = 5    
+    num_rows = 8 # number of terrain rows (levels)  # spreaded is benifitiall !
+    num_cols = 20 # number of terrain cols (types)
+    num_goals = 8    
 
     terrain_dict = {"smooth slope": 0., 
                     "rough slope up": 0.0,

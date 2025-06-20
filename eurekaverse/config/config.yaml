@@ -31,14 +31,23 @@ hydra:
     chdir: True
 
 # terrain stuff (overwrites LeggedRobotCfg)
-terrain: # controls all training terrains (which are also used for eval)
-  terrain_length: 12
+terrain_train: # controls all training terrains
+  terrain_length: 18
+  terrain_width: 4
+  vertical_scale: 0.005
+  horizontal_scale: 0.1
+  num_cols: 20
+  num_rows: 8
+  num_goals: 8
+
+terrain_eval: # controls all eval terrains (same set_terrain functions as train but less terrain redundancy)
+  terrain_length: 18
   terrain_width: 4
   vertical_scale: 0.005
   horizontal_scale: 0.1
   num_cols: 4
   num_rows: 4
-  num_goals: 5
+  num_goals: 8
 
 terrain_benchmark: # controls benchmark terrain (which is only used for eval and would lead to OOM error if video is used); more cols to account for more set_terrain_fns
   terrain_length: 18

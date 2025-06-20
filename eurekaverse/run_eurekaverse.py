@@ -92,7 +92,7 @@ def run_training(cfg, it, parallel_run_id, load_exptid):
     command = command + f" --resume --load_run {load_exptid}"
     command = command + f" --use_wandb --wandb_id {wandb_id}_{it}_{parallel_run_id} --wandb_group {run_id}" if cfg.wandb else command
     command = command + f" --render_images" if cfg.render_images else command
-    for k, v in cfg.terrain.items():
+    for k, v in cfg.terrain_train.items():
         command = command + f" --{k} {v}"
 
     process = run_subprocess(command=command, log_file=log_file)
@@ -126,7 +126,7 @@ def run_evaluation(cfg, it, parallel_run_id, exptid, terrain):
         for k, v in cfg.terrain_benchmark.items():
             command = command + f" --{k} {v}"
     else:
-        for k, v in cfg.terrain.items():
+        for k, v in cfg.terrain_eval.items():
             command = command + f" --{k} {v}"
         command += f" --num_terrain_types {cfg.num_terrain_types}"
 
@@ -260,7 +260,7 @@ def check_response(cfg, gpt_response, it, parallel_run_id, sample_id, terrain_id
     
     gpu = get_freest_gpu(gpustat_delay=0) if not cfg.deterministic_gpu else (f"cuda:{sample_id % num_gpus}" if terrain_id == -1 else f"cuda:{terrain_id % num_gpus}")
     command = f"{python_prefix} -u {train_script} --task {cfg.quadruped_model} --exptid {run_id}_{it}_{parallel_run_id} --device {gpu} --max_iterations 0 --terrain_type {terrain_type} --check_terrain_feasibility"
-    for k, v in cfg.terrain.items():
+    for k, v in cfg.terrain_train.items():
         command = command + f" --{k} {v}"
     process = run_subprocess(command=command, log_file=log_file)
     success, timeout = wait_subprocess(process, log_file, success_log="Converting heightmap to trimesh", failure_log="Traceback", timeout=10*60)
@@ -305,7 +305,7 @@ def initial_generation(cfg, parallel_run_id):
 
 def query_and_check_response(cfg, it, parallel_run_id, terrain_id, prev_executable_terrains, prev_eval_strings, all_prev_terrain_descriptions):
     for query_id in range(cfg.max_gpt_queries):
-        terrain_stats = get_terrain_stats_string(prev_executable_terrains[terrain_id], cfg.terrain)
+        terrain_stats = get_terrain_stats_string(prev_executable_terrains[terrain_id], cfg.terrain_train)
         query_messages, gpt_responses, gpt_parsed_responses, prompt_cost, response_cost = query_gpt_evolution(
             cfg, 
             prev_executable_terrains[terrain_id], # terrain to be evolved
