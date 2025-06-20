@@ -6,7 +6,7 @@ To do so, you should perform the following steps:
 3. Write a function that generates the obstacle course according to your plan.
 
 Problem Statement:
-You are given a quadruped robot that needs to navigate through an obstacle course in 3D space. The floor of the course is represented as a 2D numpy array, height_field, where each element represents the height of the ground at that point, in meters. To direct the quadruped, the course has 5 goals that the quadruped must reach in order. The goal locations should be stored in a 2D numpy array, goals, as (x, y) indices in height_field.
+You are given a quadruped robot that needs to navigate through an obstacle course in 3D space. The floor of the course is represented as a 2D numpy array, height_field, where each element represents the height of the ground at that point, in meters. To direct the quadruped, the course has 8 goals that the quadruped must reach in order. The goal locations should be stored in a 2D numpy array, goals, as (x, y) indices in height_field.
 
 To create your course, you will write a function set_terrain(length, width, field_resolution, difficulty) that creates and returns the height_field and goals arrays. The function takes in the length and width of the course, in meters, the scale of quantization for the obstacle course, in meters, and the difficulty of the obstacle course, a float between 0 (easiest) and 1 (hardest) inclusive. Please follow the template below to write your function:
 ```python
@@ -21,7 +21,7 @@ def set_terrain(length, width, field_resolution, difficulty):
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
 
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
-    goals = np.zeros((5, 2))
+    goals = np.zeros((8, 2))
 
     # Your code here
 
@@ -31,12 +31,12 @@ def set_terrain(length, width, field_resolution, difficulty):
 You can use any function from the numpy and random libraries as well as any in-built Python functions. Please write everything as Python code and annotate your code with comments, including a one-line docstring after the function definition that summarizes your obstacle course.
 
 Environment Specifications:
-1. height_field quantizes the ground plane into a grid of points. field_resolution = 0.1, in meters, is the quantization of the ground's (x, y) axes, which represents the distance between adjacent points in the height_field array.
-2. The ground plane size is 12 x 4 meters, so the height_field.shape = (12 / field_resolution, 4 / field_resolution) = (120, 40). Please make sure that your obstacle course spans exactly these dimensions.
+1. height_field quantizes the ground plane into a grid of points. field_resolution = 0.05, in meters, is the quantization of the ground's (x, y) axes, which represents the distance between adjacent points in the height_field array.
+2. The ground plane size is 12 x 4 meters, so the height_field.shape = (12 / field_resolution, 4 / field_resolution) = (240, 80). Please make sure that your obstacle course spans exactly these dimensions.
 3. The quadruped's standing size (length, width, height) is 0.645 x 0.28 x 0.4 meters. Keep these dimensions in mind when designing the size of your obstacles.
 4. The quadruped will spawn with its center at (x, y, z) = (1, width / 2, 0) meters. You must place obstacles at indices with x >= 2 / field_resolution to avoid the quadruped spawning inside an obstacle.
 5. Please make sure that your obstacles have a width of at least 1 meter. However, in rare cases, we will allow narrow obstacles with length and width of at least 0.4 meters and no smaller, as long as the quadruped is not expected to climb up or down.
-6. The goal coordinates should be within the bounds of the course. Even if you have fewer than 5 obstacles, you must set all 5 goal positions in the goals array.
+6. The goal coordinates should be within the bounds of the course. Even if you have fewer than 8 obstacles, you must set all 8 goal positions in the goals array.
 7. The quadruped will be instructed to travel in a straight line from one goal to the next. Thus, if you want the quadruped to turn, you must place a goal at the turning point.
 8. Your course should test a particular one of the robot's skills, for example by repeating a single type of obstacle. Make the course relatively consistent throughout. There will be other courses to test other skills and different obstacles.
 9. The heights in field_height can be negative. The quadruped's spawning area will always be at a height of 0 meters, so you can use negative heights to create pits or gaps in the terrain. Use this to force the quadruped to walk or jump across the tops of your obstacles without climbing up or down.
@@ -46,5 +46,5 @@ Tips:
 1. Do not call your function. Only write the function definition and the code inside it.
 2. To broadcast a 1D array to a 2D array (or 2D slice), you must first add a new axis to the 1D array.
 3. You should not add noise directly to height_field. Random noisy terrain is not necessary for our task, and we do not want it as an obstacle.
-4. When slicing into height_field, make sure to convert from meters to quantized units beforehand. For example, a slice looks like [x - m_to_idx(1):x + m_to_idx(1), y - m_to_idx(1):y + m_to_idx(1)].
+4. When slicing into height_field, make sure to convert from meters to quantized units beforehand. For example, a 2 x 2 meter slice looks like [x - m_to_idx(1):x + m_to_idx(1), y - m_to_idx(1):y + m_to_idx(1)].
 5. If you write helper functions, please make them nested functions of set_terrain. Your response should be a self-contained function definition following our template.

@@ -8,7 +8,7 @@ def set_terrain(length, width, field_resolution, difficulty):
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
 
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
-    goals = np.zeros((5, 2))
+    goals = np.zeros((8, 2))
 
     # Set up platform and ramp dimensions
     # We make the platform height near 0 at minimum difficulty so the quadruped can learn to climb up
@@ -57,15 +57,15 @@ def set_terrain(length, width, field_resolution, difficulty):
 
     # Add first platform
     cur_x = spawn_length
-    dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
-    dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
+    dx = np.random.randint(dx_min, dx_max)
+    dy = np.random.randint(dy_min, dy_max)
     add_platform(cur_x, cur_x + platform_length + dx, mid_y + dy)
     goals[1] = [cur_x + (platform_length + dx) / 2, mid_y + dy]
     cur_x += platform_length + dx + gap_length
 
-    for i in range(1, 3):  # Set up 2 ramps
-        dx = np.random.randint(dx_min, max(dx_min + 1, dx_max))
-        dy = np.random.randint(dy_min, max(dy_min + 1, dy_max))
+    for i in range(1, 6):  # Set up 5 ramps
+        dx = np.random.randint(dx_min, dx_max)
+        dy = np.random.randint(dy_min, dy_max)
         direction = (-1) ** i  # Alternate left and right ramps
         dy = dy * direction  # Alternate positive and negative y offsets
 

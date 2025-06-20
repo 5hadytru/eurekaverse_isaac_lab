@@ -2,84 +2,98 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Stepping stone pillars: The robot crosses a series of narrow, tall pillars (stepping stones) above a deep pit, requiring precise foot placement and balance."""
+    """Alternating series of ascending and descending sloped ramps ('A-frames') with flat tops, testing dynamic balance on inclines and declines."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
 
-    # Initialize the height field to flat ground
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
     goals = np.zeros((5, 2))
 
-    # Parameters
-    n_pillars = 5
-    # Pillar width (from 0.4 - 0.6 m, wider at lower difficulty)
-    pillar_width = 0.6 - 0.2 * difficulty  
-    pillar_width_idx = max(m_to_idx(pillar_width), m_to_idx(0.4))
-    # Pillar height (from 0.1 at low diff to 0.35 at high diff)
-    h_min = 0.10 + 0.10 * difficulty
-    h_max = 0.18 + 0.17 * difficulty
+    # Course Parameters
+    ramp_base_length = 1.2 - 0.4 * difficulty    # meters, gets shorter with difficulty
+    ramp_top_length = 0.6 - 0.2 * difficulty     # meters, gets shorter with difficulty
+    ramp_total_length = 2 * ramp_base_length + ramp_top_length
+    ramp_width = 1.2 + 0.7 * (1 - difficulty)    # ramps are narrower at high difficulty
+    ramp_height = 0.13 + 0.22 * difficulty       # A-frame gets much steeper higher difficulty
 
-    # Between 1.8m and 2.2m gap between pillar centers
-    gap_mu = 2.0 + 0.5*(difficulty - 0.5)  # range from 1.75 to 2.25
-    gap_sigma = 0.10 + 0.20 * difficulty
+    n_ramps = 4
+    pit_depth = -0.15 - 0.25 * difficulty
+    pit_length = 0.6 + 0.6 * difficulty
 
-    mid_y = m_to_idx(width) // 2
+    # Convert to indices
+    ramp_base_length = m_to_idx(ramp_base_length)
+    ramp_top_length = m_to_idx(ramp_top_length)
+    ramp_width = m_to_idx(ramp_width)
+    ramp_total_length = 2*ramp_base_length + ramp_top_length
+    ramp_height = float(ramp_height)
+    pit_length = m_to_idx(pit_length)
 
-    # Make a deep pit after the spawn area (all cells set to negative height)
-    spawn_length = m_to_idx(2)
-    height_field[0:spawn_length,:] = 0.0         # Start area stays flat ground (spawn)
-    pit_x_start = spawn_length
-    height_field[pit_x_start:,:] = -1.1          # Pit is -1.1m deep
+    # Find midline for ramp y-placement
+    y_mid = m_to_idx(width // 2)
 
-    # Place first goal at the front of the spawn platform
-    goals[0] = [spawn_length-m_to_idx(0.5), mid_y]
+    def add_ramp(x_start, direction=1):
+        """Draw an A-frame ramp with direction=1 (up), direction=-1 (down)"""
+        x0 = x_start
+        x1 = x0 + ramp_base_length
+        x2 = x1 + ramp_top_length
+        x3 = x2 + ramp_base_length
 
-    # Randomly offset the pillar row in y direction up to ±0.8m
-    pillar_lane_offset = random.randint(-m_to_idx(0.8), m_to_idx(0.8))
+        y0 = max(0, y_mid - ramp_width // 2)
+        y1 = min(m_to_idx(width), y_mid + ramp_width // 2)
+        # Slope up
+        for xi in range(x0, x1):
+            p = (xi - x0) / max(1, (x1 - x0))
+            if direction == 1:
+                val = ramp_height * p
+            else:
+                val = ramp_height * (1 - p)
+            height_field[xi, y0:y1] = val
+        # Flat top
+        for xi in range(x1, x2):
+            height_field[xi, y0:y1] = ramp_height if direction == 1 else 0
+        # Slope down
+        for xi in range(x2, x3):
+            p = (xi - x2) / max(1, (x3 - x2))
+            if direction == 1:
+                val = ramp_height * (1 - p)
+            else:
+                val = ramp_height * p
+            height_field[xi, y0:y1] = val
+        return (x0, x1, x2, x3), (y0, y1)
+    
+    # Course starts with a flat safe zone
+    spawn_x = m_to_idx(2)
+    height_field[:spawn_x, :] = 0
+    goals[0] = [spawn_x - m_to_idx(0.5), y_mid]
 
-    # Pillar placement
-    pillar_x = []
-    pillar_y = []
-    cur_x = pit_x_start + m_to_idx(0.5)  # First pillar, some gap after spawn
-    for i in range(n_pillars):
-        # For each pillar, randomize y location (within ±0.7m) from centerline, and randomize pillar height
-        if i == 0:
-            center_y = mid_y + pillar_lane_offset
-        else:
-            sideways_offset = random.randint(-m_to_idx(0.7), m_to_idx(0.7))
-            center_y = mid_y + sideways_offset + pillar_lane_offset
+    current_x = spawn_x
+    direction = 1  # First ramp goes up
+    for i in range(n_ramps):
+        # Pit between ramps
+        if i > 0:
+            height_field[current_x:current_x + pit_length, :] = pit_depth
+            current_x = current_x + pit_length
 
-        h = np.random.uniform(h_min, h_max)
-        x1 = max(cur_x - pillar_width_idx//2, 0)
-        x2 = min(cur_x + pillar_width_idx//2, m_to_idx(length))
-        y1 = max(center_y - pillar_width_idx//2, 0)
-        y2 = min(center_y + pillar_width_idx//2, m_to_idx(width))
+        # Add ramp
+        (x0, x1, x2, x3), (y0, y1) = add_ramp(current_x, direction=direction)
+        # Place goal at the center of the flat top
+        goal_x = (x1 + x2) // 2
+        goal_y = (y0 + y1) // 2
+        goals[i + 1] = [goal_x, goal_y]
+        current_x = x3
 
-        # Draw pillar (raise above pit to its assigned height)
-        height_field[x1:x2, y1:y2] = h
+        # Alternate ramp facing direction (A-frames, up then down)
+        direction *= -1
 
-        # Place goal at the center of this pillar
-        goals[i] = [ (x1 + x2) // 2, (y1 + y2) // 2 ]
+    # Flat finish section
+    height_field[current_x:, :] = 0
 
-        pillar_x.append((x1 + x2) // 2)
-        pillar_y.append((y1 + y2) // 2)
-
-        # Advance x location for next pillar, add random (per difficulty) gap
-        gap = np.random.normal(gap_mu, gap_sigma)
-        cur_x += m_to_idx(gap)
-
-    # Ensure the last bit of the terrain is set above the pit to allow safe exit
-    end_x = min(m_to_idx(length), int(cur_x) + m_to_idx(1.0))
-    height_field[end_x:, :] = 0.0    # Raise the exit area to flat ground
-
-    # Place final goal (5th) at the flat exit
-    goals[4] = [end_x + m_to_idx(0.5), mid_y]
-
-    # Make sure all goal indices are within bounds
-    for i in range(5):
-        goals[i,0] = np.clip(goals[i,0], 0, m_to_idx(length)-1)
-        goals[i,1] = np.clip(goals[i,1], 0, m_to_idx(width)-1)
+    # Ensure all goals are within bounds
+    for j in range(5):
+        gx, gy = goals[j]
+        gx, gy = int(np.clip(gx, 0, height_field.shape[0]-1)), int(np.clip(gy, 0, height_field.shape[1]-1))
+        goals[j] = [gx, gy]
 
     return height_field, goals
