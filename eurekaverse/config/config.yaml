@@ -24,7 +24,7 @@ initial_query_sample_multiplier: 1     # Multiplier for the number of samples to
 evolution_query_sample_multiplier: 4   # Multiplier for the number of samples to query in later iterations
 max_gpt_queries: 10                    # Maximum number of attempted GPT queries for a single prompt
 
-resume_run: ""      # Resume from a previous hydra run
+resume_run: "2025-06-20_23-34-05"      # Resume from a previous hydra run
 
 hydra:
   job:
