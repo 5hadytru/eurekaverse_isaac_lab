@@ -90,7 +90,7 @@ app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
 from legged_gym.envs import *
-from isaaclab.sensors import CameraCfg, TiledCameraCfg
+from isaaclab.sensors import CameraCfg, Camera
 import isaaclab.sim as sim_utils
 
 def validate_consecutive_tuples(tuples_list):
@@ -102,7 +102,7 @@ def validate_consecutive_tuples(tuples_list):
                     raise AssertionError(f"Tuple at index {i} is not consecutive: {item}")
     return True
 
-def add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name):
+def get_camera_cfg(col_idx, row_idx, camera_name, env_id:int):
     """
     Add a camera configuration to the environment config for a specific terrain cell.
     
@@ -114,8 +114,8 @@ def add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name):
     """
     cam_cfg_dict = get_camera_coords(col_idx, row_idx)
 
-    cam_cfg = TiledCameraCfg(
-        prim_path=f"/World/envs/env_.*/{camera_name}",
+    cam_cfg = CameraCfg(
+        prim_path=f"/World/envs/env_{env_id}/{camera_name}",
         update_period=0,
         height=544,
         width=1088,
@@ -127,14 +127,14 @@ def add_camera_to_env_cfg(env_cfg, col_idx, row_idx, camera_name):
             clipping_range=(0.1, 1000.0),
             visible=False
         ),
-        offset=TiledCameraCfg.OffsetCfg(
+        offset=CameraCfg.OffsetCfg(
             pos=cam_cfg_dict['position'],
             rot=cam_cfg_dict['rotation'],  # quaternion (w,x,y,z)
             convention="world"
         )
     )
 
-    setattr(env_cfg.scene, camera_name, cam_cfg)
+    return cam_cfg
 
 def evaluate(args):
     faulthandler.enable()
@@ -181,16 +181,22 @@ def evaluate(args):
         env_cfg.commands.ranges.lin_vel_x[0] = 0
         env_cfg.commands.ranges.lin_vel_y[0] = 0
 
+    # prepare environment
+    env, _ = task_registry.make_env(args=args, name=args.task, env_cfg=env_cfg, render_mode="rgb_array" if args.video else None)
+
+    obs = env.get_observations()
+    max_episode_length = env.max_episode_length
+    device = env.device
+    rew_term_keys = env.rew_term_sums.keys()
+
     if args.video:
+        # first, get camera names and their column/row assignments
         assert args.num_terrain_types is not None, "Must provide number of terrain types since cameras are evenly distributed among them"
-        
-        num_cols = env_cfg.terrain.num_cols if args.num_cols is None else args.num_cols
-        assert env_cfg.terrain.num_cols % args.num_terrain_types == 0, f"Current camera setup requires equally represented variations (which won't happen here since there are {args.num_terrain_types} terrain types and {num_cols} columns)"
+        assert env_cfg.terrain.num_cols % args.num_terrain_types == 0, f"Current camera setup requires equally represented variations (which won't happen here since there are {args.num_terrain_types} terrain types and {env_cfg.terrain.num_cols} columns)"
         print("[INFO] Recording videos during training.")
 
-        camera_col_idxes = [tuple(range(8))]
-        camera_row_idxes = [0]
-        # camera_row_idxes = list(range(env_cfg.terrain.num_rows))
+        camera_col_idxes = list(range(env_cfg.terrain.num_cols))
+        camera_row_idxes = [0, 3, 6]
 
         validate_consecutive_tuples(camera_col_idxes)
         validate_consecutive_tuples(camera_row_idxes)
@@ -201,22 +207,12 @@ def evaluate(args):
             for row_idx in camera_row_idxes:
                 cam_name = f"cam_{idx_to_str(row_idx)}r_c{idx_to_str(col_idx)}"
                 cam_names.append(cam_name)
-                add_camera_to_env_cfg(env_cfg, col_idx, row_idx, cam_name)
 
         print(f"[INFO] Placed {len(cam_names)} cameras")
 
-    # prepare environment
-    env, _ = task_registry.make_env(args=args, name=args.task, env_cfg=env_cfg, render_mode="rgb_array" if args.video else None)
-
-    obs = env.get_observations()
-    max_episode_length = env.max_episode_length
-    device = env.device
-    rew_term_keys = env.rew_term_sums.keys()
-
-    if args.video:
         video_out_dir = os.path.join(load_dir, "eval_videos")
 
-        # map camera name to the envs with the robot acting in it (envs that have terrain_types matching the col_idx for the camera + have difficulty matching row_idx)
+        # next, map camera name to the env with the robot acting in it (envs that have terrain_types matching the col_idx for the camera + have difficulty matching row_idx)
         def cam_name_to_matched_rows_and_cols(n:str):
             def get_range(nums):
                 if "_" in nums:
@@ -233,14 +229,21 @@ def evaluate(args):
         cam_name_to_env_ids = {}
         for cam_name in cam_names:
             row_range, col_range = cam_name_to_matched_rows_and_cols(cam_name)
+            print(cam_name, row_range, col_range)
             mask = torch.isin(env.terrain_types.cpu(), torch.tensor(col_range)) & torch.isin(env.terrain_levels.cpu(), torch.tensor(row_range))
             matched_env_ids = torch.nonzero(mask).squeeze()
 
             print(f"Matched {matched_env_ids} env IDs with rows {row_range} and cols {col_range} to cam {cam_name}")
 
-            cam_name_to_env_ids[cam_name] = matched_env_ids
+            # cameras are no longer tiled; should be matching one env per cam
+            assert len(row_range) == 1 and len(col_range) == 1, f"Expected exactly one row and one column for camera {cam_name}, but got {len(row_range)} rows and {len(col_range)} columns"
+            assert matched_env_ids.sum() == 1, f"Expected exactly one env for camera {cam_name}, but got {matched_env_ids.sum()}"
 
-        env = MultiCamVideo(env, video_out_dir, cam_name_to_env_ids)
+            # now get camera cfg and spawn cam into the scene
+            cam_cfg = get_camera_cfg(col_range[0], row_range[0], cam_name, env_id=torch.where(matched_env_ids)[0].item())
+            env.scene.sensors[cam_name] = Camera(camera_cfg)
+
+        env = MultiCamVideo(env, video_out_dir, cam_names)
 
     total_steps = args.max_steps if (args.max_steps is not None and args.max_steps > 0) else 10 * int(max_episode_length)
 

@@ -5,15 +5,15 @@ import torch
 
 
 class MultiCamVideo(gym.Wrapper):
-    def __init__(self, env, out_dir, cam_name_to_env_ids: dict, fps=30, length=float("inf")):
+    def __init__(self, env, out_dir, cam_names:list, fps=30, length=float("inf")):
         super().__init__(env)
         self.out_dir, self.fps = out_dir, fps
         self.len = length
         os.makedirs(out_dir, exist_ok=True)
-        self.cam_name_to_env_ids = cam_name_to_env_ids
+        self.cam_names = cam_names
         self.writers = {
             cam_name: imageio.get_writer(f"{self.out_dir}/{cam_name}.mp4", fps=self.fps)
-            for cam_name in cam_name_to_env_ids.keys()
+            for cam_name in cam_names
         }
         self.frame = 0
 
@@ -21,28 +21,11 @@ class MultiCamVideo(gym.Wrapper):
         obs, r, term, trunc, info = self.env.step(action)
 
         if self.frame < self.len:
-            for cam_name, env_ids in self.cam_name_to_env_ids.items():
-                # Retrieve the batch of images for this camera: shape (X, H, W, 3)
-                image_batch = self.env.scene[cam_name].data.output["rgb"][0]
-                # image_batch = self.env.scene[cam_name].data.output["rgb"][env_ids]
-
-                print(f"Received {image_batch.shape} from {cam_name}")
-
-                if len(image_batch.shape) == 4:  # Expecting (X, H, W, 3)
-                    X, H, W, C = image_batch.shape
-                    if X >= 1:
-                        # Take only the first image in the batch
-                        first_image = image_batch[0]  # shape (H, W, 3)
-                        # Convert to numpy uint8 and write directly
-                        self.writers[cam_name].append_data(first_image.cpu().numpy().astype("uint8"))
-                    else:
-                        raise Exception(
-                            f"No images found (X={X}) for camera '{cam_name}', cannot index 0."
-                        )
-                else:
-                    raise Exception(
-                        f"Unexpected image shape {image_batch.shape} for camera '{cam_name}'."
-                    )
+            for cam_name in self.cam_names:
+                image = self.env.scene.sensors[cam_name].data.output["rgb"]
+                assert len(image.shape) == 3, f"Expected image shape to be 3D, got {image.shape}"
+                print(f"Received {image.shape} from {cam_name}")
+                self.writers[cam_name].append_data(image.cpu().numpy().astype("uint8"))
 
         self.frame += 1
         return obs, r, term, trunc, info
