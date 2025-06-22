@@ -183,11 +183,14 @@ def evaluate(args):
 
     if args.video:
         assert args.num_terrain_types is not None, "Must provide number of terrain types since cameras are evenly distributed among them"
-        assert env_cfg.terrain.num_cols % args.num_terrain_types == 0, f"Current camera setup requires equally represented variations (which won't happen here since there are assumedly 10 terrain types and {env_cfg.terrain.num_cols} columns)"
+        
+        num_cols = env_cfg.terrain.num_cols if args.num_cols is None else args.num_cols
+        assert env_cfg.terrain.num_cols % args.num_terrain_types == 0, f"Current camera setup requires equally represented variations (which won't happen here since there are {args.num_terrain_types} terrain types and {num_cols} columns)"
         print("[INFO] Recording videos during training.")
 
-        camera_col_idxes = [(0,1), (2,3)]
-        camera_row_idxes = list(range(env_cfg.terrain.num_rows))
+        camera_col_idxes = [tuple(range(8))]
+        camera_row_idxes = [0]
+        # camera_row_idxes = list(range(env_cfg.terrain.num_rows))
 
         validate_consecutive_tuples(camera_col_idxes)
         validate_consecutive_tuples(camera_row_idxes)

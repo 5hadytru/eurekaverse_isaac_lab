@@ -23,7 +23,10 @@ class MultiCamVideo(gym.Wrapper):
         if self.frame < self.len:
             for cam_name, env_ids in self.cam_name_to_env_ids.items():
                 # Retrieve the batch of images for this camera: shape (X, H, W, 3)
-                image_batch = self.env.scene[cam_name].data.output["rgb"][env_ids]
+                image_batch = self.env.scene[cam_name].data.output["rgb"][0]
+                # image_batch = self.env.scene[cam_name].data.output["rgb"][env_ids]
+
+                print(f"Received {image_batch.shape} from {cam_name}")
 
                 if len(image_batch.shape) == 4:  # Expecting (X, H, W, 3)
                     X, H, W, C = image_batch.shape
@@ -64,14 +67,15 @@ def get_camera_coords(col_idx, row_idx, cam_height=5.75):
     """
 
     all_configs = {
-        ((0,1), 0): ((-13.5, 11.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
-        ((2,3), 0): ((-3.5, 19.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
-        ((0,1), 1): ((-1.5, 6.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
-        ((2,3), 1): ((8.5, 14.25, cam_height), (1.0, 0.0, 0.25, 0.0)),
-        ((0,1), 2): ((10.75, 1.25, cam_height), (1.0, 0.0, 0.25, 0.0)),
-        ((2,3), 2): ((20.5, 9.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
-        ((0,1), 3): ((22.6, -3.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
-        ((2,3), 3): ((32.75, 4.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        (tuple(range(8)), 0): ((-13.5, 11.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        # ((0,1), 0): ((-13.5, 11.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        # ((2,3), 0): ((-3.5, 19.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        # ((0,1), 1): ((-1.5, 6.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        # ((2,3), 1): ((8.5, 14.25, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        # ((0,1), 2): ((10.75, 1.25, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        # ((2,3), 2): ((20.5, 9.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        # ((0,1), 3): ((22.6, -3.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
+        # ((2,3), 3): ((32.75, 4.5, cam_height), (1.0, 0.0, 0.25, 0.0)),
     }
 
     return {
