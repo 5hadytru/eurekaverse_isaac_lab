@@ -112,13 +112,13 @@ def get_camera_cfg(col_idx, row_idx, camera_name, env_id:int):
         row_idx: Row index in the terrain grid
         camera_name: Optional name for the camera (defaults to "cam_r{row}_c{col}")
     """
-    cam_cfg_dict = get_camera_coords(col_idx, row_idx)
+    cam_offset_dict = get_camera_coords(col_idx, row_idx)
 
     cam_cfg = CameraCfg(
         prim_path=f"/World/envs/env_{env_id}/{camera_name}",
-        update_period=0,
-        height=544,
-        width=1088,
+        update_period=0.1,
+        height=272,
+        width=544,
         data_types=['rgb'],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=24.0,
@@ -128,8 +128,8 @@ def get_camera_cfg(col_idx, row_idx, camera_name, env_id:int):
             visible=False
         ),
         offset=CameraCfg.OffsetCfg(
-            pos=cam_cfg_dict['position'],
-            rot=cam_cfg_dict['rotation'],  # quaternion (w,x,y,z)
+            pos=cam_offset_dict['position'],
+            rot=cam_offset_dict['rotation'],  # quaternion (w,x,y,z)
             convention="world"
         )
     )
@@ -158,7 +158,10 @@ def evaluate(args):
     # env_cfg.scene.num_envs = max(env_cfg.scene.num_envs, env_cfg.terrain.num_rows * env_cfg.terrain.num_cols)
 
     # single environment for each grid cell
-    env_cfg.scene.num_envs = env_cfg.terrain.num_rows * env_cfg.terrain.num_cols
+    if args.num_rows is not None:
+        env_cfg.scene.num_envs = args.num_rows * args.num_cols
+    else:
+        env_cfg.scene.num_envs = env_cfg.terrain.num_rows * env_cfg.terrain.num_cols
     assert args.num_envs is None, "Currently hard-coding num_envs to match number of terrain cells"
     env_cfg.depth.camera_num_envs = env_cfg.scene.num_envs
     
@@ -196,7 +199,7 @@ def evaluate(args):
         print("[INFO] Recording videos during training.")
 
         camera_col_idxes = list(range(env_cfg.terrain.num_cols))
-        camera_row_idxes = [0, 3, 6]
+        camera_row_idxes = [0, 2, 4]
 
         validate_consecutive_tuples(camera_col_idxes)
         validate_consecutive_tuples(camera_row_idxes)
@@ -208,7 +211,7 @@ def evaluate(args):
                 cam_name = f"cam_{idx_to_str(row_idx)}r_c{idx_to_str(col_idx)}"
                 cam_names.append(cam_name)
 
-        print(f"[INFO] Placed {len(cam_names)} cameras")
+        print(f"[INFO] Placing {len(cam_names)} cameras")
 
         video_out_dir = os.path.join(load_dir, "eval_videos")
 
@@ -231,17 +234,21 @@ def evaluate(args):
             row_range, col_range = cam_name_to_matched_rows_and_cols(cam_name)
             print(cam_name, row_range, col_range)
             mask = torch.isin(env.terrain_types.cpu(), torch.tensor(col_range)) & torch.isin(env.terrain_levels.cpu(), torch.tensor(row_range))
-            matched_env_ids = torch.nonzero(mask).squeeze()
+            matched_env_id = int(torch.nonzero(mask).squeeze())
 
-            print(f"Matched {matched_env_ids} env IDs with rows {row_range} and cols {col_range} to cam {cam_name}")
+            # print(f"Matched env ID {matched_env_id} with rows {row_range} and cols {col_range} to cam {cam_name}")
 
             # cameras are no longer tiled; should be matching one env per cam
             assert len(row_range) == 1 and len(col_range) == 1, f"Expected exactly one row and one column for camera {cam_name}, but got {len(row_range)} rows and {len(col_range)} columns"
-            assert matched_env_ids.sum() == 1, f"Expected exactly one env for camera {cam_name}, but got {matched_env_ids.sum()}"
-
+            
             # now get camera cfg and spawn cam into the scene
-            cam_cfg = get_camera_cfg(col_range[0], row_range[0], cam_name, env_id=torch.where(matched_env_ids)[0].item())
-            env.scene.sensors[cam_name] = Camera(camera_cfg)
+            cam_cfg = get_camera_cfg(col_range[0], row_range[0], cam_name, matched_env_id)
+            env.scene.sensors[cam_name] = Camera(cam_cfg)
+
+            # we are creating a sensor after scene initialization, so we have to replaicate what
+            # the InteractiveScene does upon initializing a sensor
+            env.scene.sensors[cam_name]._initialize_impl()
+            env.scene.sensors[cam_name]._is_initialized = True
 
         env = MultiCamVideo(env, video_out_dir, cam_names)
 
