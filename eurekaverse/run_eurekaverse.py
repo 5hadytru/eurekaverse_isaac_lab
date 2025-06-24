@@ -155,7 +155,7 @@ def setup_training_all_terrains(it):
         for i in range(num_chunks):
             copy_terrain(f"{terrain_filename}_{i}", f"{output_dir}/terrain_iter-{it}_run-all_{i}.py")
 
-def parallel_run(cfg, it, parallel_run_id):
+def parallel_run(cfg, it, parallel_run_id, only_parallel_run:bool=False):
     """Runs training and evaluation for a parallel run."""
     global all_executable_terrains, all_executable_terrains_lock
 
@@ -212,16 +212,20 @@ def parallel_run(cfg, it, parallel_run_id):
     eval_process.communicate()
 
     # Start evaluation (all training terrains) process
-    eval_all_training_log_files = []
-    for i in range(num_chunks):
-        logging.info(f"> Starting {eval_script.name} subprocess (all-training_{i}) for parallel run {parallel_run_id}...")
-        eval_process, eval_all_training_log_file = run_evaluation(cfg, it, parallel_run_id, exptid, terrain=f"all_training_{i}")
-        if eval_process is None:
-            logging.warning(f"Error in evaluation (all-training_{i}) for run {parallel_run_id}!")
-            return
-        logging.info(f"Evaluation (all-training_{i}) started for run {parallel_run_id}...")
-        eval_process.communicate()
-        eval_all_training_log_files.append(eval_all_training_log_file)
+    if not only_parallel_run:
+        eval_all_training_log_files = []
+        for i in range(num_chunks):
+            logging.info(f"> Starting {eval_script.name} subprocess (all-training_{i}) for parallel run {parallel_run_id}...")
+            eval_process, eval_all_training_log_file = run_evaluation(cfg, it, parallel_run_id, exptid, terrain=f"all_training_{i}")
+            if eval_process is None:
+                logging.warning(f"Error in evaluation (all-training_{i}) for run {parallel_run_id}!")
+                return
+            logging.info(f"Evaluation (all-training_{i}) started for run {parallel_run_id}...")
+            eval_process.communicate()
+            eval_all_training_log_files.append(eval_all_training_log_file)
+    else:
+        eval_all_training_log_files = [eval_post_training_log_file]
+        logging.info(f"> Skipping {eval_script.name} subprocess (all-training_{i}) for parallel run {parallel_run_id} (it's the only run, right?)...")
 
     # Start evaluation (testing terrain) process
     logging.info(f"> Starting {eval_script.name} subprocess (testing) for parallel run {parallel_run_id}...")

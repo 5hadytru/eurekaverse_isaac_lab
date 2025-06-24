@@ -44,6 +44,7 @@ import matplotlib.pyplot as plt
 from time import time, sleep
 import pickle
 import copy
+from collections.abc import Sequence
 
 from isaaclab.utils.dict import print_dict
 from isaaclab.app import AppLauncher
@@ -136,6 +137,36 @@ def get_camera_cfg(col_idx, row_idx, camera_name, env_id:int):
 
     return cam_cfg
 
+
+class SingleEnvCamera(Camera):
+    """
+    Since each of our cameras is only placed in a single env, we have to overwrite Camera's reset() method,
+    which will take all the env_ids given to the DirectRLEnv._reset_idx method since the camera will usually be 
+    present in each env
+    """
+    # def __init__(self, cfg: CameraCfg, env_id:int):
+    #     super().__init__(cfg)
+    #     self.env_id = env_id
+
+    def reset(self, env_ids: Sequence[int] | None = None):
+        env_ids = None # this is the key change
+
+        if not self._is_initialized:
+            raise RuntimeError(
+                "Camera could not be initialized. Please ensure --enable_cameras is used to enable rendering."
+            )
+        # reset the timestamps
+        super().reset(env_ids)
+        # resolve None
+        # note: cannot do smart indexing here since we do a for loop over data.
+        if env_ids is None:
+            env_ids = self._ALL_INDICES
+        # reset the data
+        # note: this recomputation is useful if one performs events such as randomizations on the camera poses.
+        self._update_poses(env_ids)
+        # Reset the frame count
+        self._frame[env_ids] = 0
+
 def evaluate(args):
     faulthandler.enable()
 
@@ -199,7 +230,7 @@ def evaluate(args):
         print("[INFO] Recording videos during training.")
 
         camera_col_idxes = list(range(env_cfg.terrain.num_cols))
-        camera_row_idxes = [0, 2, 4]
+        camera_row_idxes = [0, 1, 3, 5, 7]
 
         validate_consecutive_tuples(camera_col_idxes)
         validate_consecutive_tuples(camera_row_idxes)
@@ -243,7 +274,7 @@ def evaluate(args):
             
             # now get camera cfg and spawn cam into the scene
             cam_cfg = get_camera_cfg(col_range[0], row_range[0], cam_name, matched_env_id)
-            env.scene.sensors[cam_name] = Camera(cam_cfg)
+            env.scene.sensors[cam_name] = SingleEnvCamera(cam_cfg)
 
             # we are creating a sensor after scene initialization, so we have to replaicate what
             # the InteractiveScene does upon initializing a sensor

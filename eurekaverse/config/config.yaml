@@ -8,7 +8,7 @@ quadruped_model: "go1"                 # Robot model, "go1" or "a1"
 iterations: 7                          # Number of environment generation iterations
 train_iterations: 1500                 # Number of training iterations per generated environment
 eval_steps: 1001                       # Number of evaluation steps per environment (1001 is fairly accurate, 10001 is most accurate)
-num_terrain_types: 4                   # Number of terrains to generate
+num_terrain_types: 10                  # Number of terrains to generate
 num_parallel_runs: 1                   # Number of parallel training runs per iteration
 num_parallel_checks: 4                 # Number of parallel runs to query and check executability of GPT responses
 
@@ -24,7 +24,7 @@ initial_query_sample_multiplier: 1     # Multiplier for the number of samples to
 evolution_query_sample_multiplier: 4   # Multiplier for the number of samples to query in later iterations
 max_gpt_queries: 10                    # Maximum number of attempted GPT queries for a single prompt
 
-resume_run: "2025-06-20_23-34-05"      # Resume from a previous hydra run
+resume_run: ""      # Resume from a previous hydra run
 
 hydra:
   job:
@@ -45,8 +45,8 @@ terrain_eval: # controls all eval terrains (same set_terrain functions as train 
   terrain_width: 4
   vertical_scale: 0.005
   horizontal_scale: 0.1
-  num_cols: 4
-  num_rows: 4
+  num_cols: 10
+  num_rows: 8
   num_goals: 8
 
 terrain_benchmark: # controls benchmark terrain (which is only used for eval and would lead to OOM error if video is used); more cols to account for more set_terrain_fns
