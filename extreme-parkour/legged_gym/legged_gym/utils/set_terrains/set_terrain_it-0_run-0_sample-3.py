@@ -2,91 +2,98 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """A balance beam course: tests precise foot placement and lateral balance by requiring the quadruped to traverse a series of progressively narrower, elevated beams with small connecting flat landings."""
+    """Sequence of balance beams and tight turns for testing dynamic balance and turning agility."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
-        if isinstance(m, list) or isinstance(m, tuple):
-            return [round(i / field_resolution) for i in m]
-        return np.round(m / field_resolution).astype(np.int16)
+        return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
 
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
-    goals = np.zeros((5, 2))
-    
-    # PARAMETERS
-    # Beam length and base height
-    min_beam_length, max_beam_length = 1.8, 2.4
-    base_height = 0.20 + 0.10 * difficulty      # base elevation
-    pit_depth = -0.7 - 0.6 * difficulty         # depth of off-beam areas
-    # Narrower beams at higher difficulty
-    min_beam_width = 1.0 - 0.65 * difficulty    # from 1.0m (easy) down to 0.35m (hard)
-    min_beam_width = max(min_beam_width, 0.35)  # do not allow narrow beams < 0.35m
+    goals = np.zeros((8, 2))
 
-    spawn_length = m_to_idx(2.0)                # leave 2m spawn area
-    field_len = m_to_idx(length)
-    field_wid = m_to_idx(width)
-    mid_y = field_wid // 2
+    # Terrain parameters
+    course_length = m_to_idx(length)
+    course_width = m_to_idx(width)
+    mid_y = course_width // 2
 
-    # Make starting area flat and level
-    height_field[:spawn_length, :] = 0.0
-    goals[0] = [spawn_length - m_to_idx(0.5), mid_y]
+    # Balance beam parameters
+    beam_width = 0.25 + 0.15 * (1 - difficulty)       # wider beam at easy, narrower at hard, min 0.25m
+    beam_length = 2.0 + 1.2 * difficulty              # longer beams at high difficulty
+    beam_height = 0.08 + 0.12 * difficulty            # higher beams at high difficulty
 
-    num_beams = 4                              # four beams, with last segment as a wide finish pad
-    gap_length = 0.5 + 0.5 * difficulty         # gaps between beams become longer with difficulty
-    gap_length_idx = m_to_idx(gap_length)
+    beam_width_idx = max(m_to_idx(beam_width), m_to_idx(0.25))
+    beam_length_idx = m_to_idx(beam_length)
+    beam_height = float(beam_height)
 
-    beam_starts = [spawn_length + i * (int(np.mean([m_to_idx(min_beam_length), m_to_idx(max_beam_length)]) + gap_length_idx)) for i in range(num_beams)]
-    # Some small random shift (sideways) for later beams
-    max_lateral_shift = m_to_idx(0.4 + 0.4*difficulty)
+    # The robot spawns at x=1m, course starts after x=2m
+    start_x_idx = m_to_idx(2.0)
+    spawn_length = m_to_idx(2.0)
+    # Flat ground around spawn
+    height_field[:spawn_length, :] = 0
 
-    curr_x = spawn_length
-    for i in range(num_beams):
-        # Define beam geometry
-        beam_length = m_to_idx(random.uniform(min_beam_length, max_beam_length))
-        # Center all beams but progressively add random lateral offset to make them misaligned
-        if i == 0:
-            beam_center_y = mid_y
-        else:
-            beam_center_y += random.randint(-max_lateral_shift, max_lateral_shift)
-            beam_center_y = max(m_to_idx(min_beam_width)//2, min(field_wid - m_to_idx(min_beam_width)//2, beam_center_y))
+    # Transition step-up to the first beam
+    step_up_length = m_to_idx(0.25)
+    step_up_height = beam_height / 2
+    height_field[start_x_idx:start_x_idx + step_up_length, :] = step_up_height
 
-        beam_half_width = m_to_idx(min_beam_width / 2.0)
-        
-        # Build beam (it's like a raised platform)
-        # All other areas beside beam are pits.
-        x1, x2 = curr_x, min(curr_x + beam_length, field_len)
-        y1, y2 = beam_center_y - beam_half_width, beam_center_y + beam_half_width
-        y1 = max(0, y1)
-        y2 = min(field_wid, y2)
+    # Beam arrangement: zigzag pattern (turn left, right, left...)
+    zigzag_offset = 0.7           # meters left/right from center; how far the beam can go
+    n_beams = 5
+    gap_between_beams = 0.5 + 0.6 * difficulty        # gap between zigzags increases with difficulty
+    gap_idx = m_to_idx(gap_between_beams)
+    offset_idx = m_to_idx(zigzag_offset)
+    zigzag_sign = 1
 
-        height_field[x1:x2, :] = pit_depth          # pit outside the beam
-        height_field[x1:x2, y1:y2] = base_height    # beam itself
+    beams = []
+    x = start_x_idx + step_up_length
+    for i in range(n_beams):
+        # Calculate beam's y-center (zigzag)
+        y_c = mid_y + zigzag_sign * offset_idx
+        zigzag_sign *= -1  # alternate left/right
+        # Bound within course
+        y_c = np.clip(y_c, beam_width_idx // 2 + 1, course_width - (beam_width_idx // 2 + 1))
+        x1 = int(x)
+        x2 = min(int(x + beam_length_idx), course_length)
+        y1 = int(y_c - beam_width_idx // 2)
+        y2 = int(y_c + np.ceil(beam_width_idx / 2))
+        # Set beam surface
+        height_field[x1:x2, y1:y2] = beam_height
+        beams.append((x1, x2, y_c))
 
-        # Flat "connectors" between beams as landings (for goals)
-        connector_length = m_to_idx(0.4)
-        # At the start of first beam, keep a short flat area
-        if i == 0:
-            height_field[x1-connector_length:x1, :] = 0.0
-        # At the end of every beam, add landing pad (wider)
-        landing_y1 = max(0, beam_center_y - m_to_idx(0.7))
-        landing_y2 = min(field_wid, beam_center_y + m_to_idx(0.7))
-        height_field[x2:x2+connector_length, landing_y1:landing_y2] = 0.0
+        # Place corresponding goal at 60% along each beam
+        gx = int(x1 + 0.6 * (x2 - x1))
+        goals[i+1] = [gx, y_c]
 
-        # Save goal: set at the landing after each beam
-        goal_x = int(x2 + connector_length // 2)
-        goal_y = beam_center_y
-        if i < 4:
-            goals[i+1] = [goal_x, goal_y]
+        # Next beam starts after the gap, shifted along the x axis
+        x = x2 + gap_idx
 
-        # Move for next beam (gap in terrain)
-        curr_x = int(x2 + connector_length + gap_length_idx)
+    # Set the starting goal at the start of the first beam (flat area)
+    goals[0] = [m_to_idx(1.0), mid_y]
 
-    # Make rest of field flat as a finish zone
-    height_field[curr_x:, :] = 0.0
+    # Place last beam as a final wide "platform" for rest/exit
+    platform_length = m_to_idx(1.6)
+    platform_height = beam_height * 1.1
+    x1 = int(x)
+    x2 = min(int(x + platform_length), course_length)
+    y1 = int(mid_y - m_to_idx(0.8))
+    y2 = int(mid_y + m_to_idx(0.8))
+    height_field[x1:x2, y1:y2] = platform_height
+    # Goal at center of platform
+    goals[6] = [int((x1 + x2) // 2), mid_y]
 
-    # Clamp all goal indices to the map
+    # Final goal near the end of the course, on flat ground as "exit"
+    height_field[x2:, :] = 0
+    goals[7] = [min(x2 + m_to_idx(0.5), course_length - 1), mid_y]
+
+    # Fill unused goals (if any) as repeated on the platform
+    for g in range(6, 8):
+        if np.all(goals[g] == 0):
+            goals[g] = goals[6]
+
+    # Ensure all goals are in-bounds
     for i in range(goals.shape[0]):
-        goals[i, 0] = np.clip(goals[i, 0], 0, field_len-1)
-        goals[i, 1] = np.clip(goals[i, 1], 0, field_wid-1)
+        x, y = int(goals[i,0]), int(goals[i,1])
+        goals[i,0] = np.clip(x, 0, course_length-1)
+        goals[i,1] = np.clip(y, 0, course_width-1)
 
     return height_field, goals

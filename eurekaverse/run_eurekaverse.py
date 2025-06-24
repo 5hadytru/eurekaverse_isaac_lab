@@ -552,7 +552,7 @@ def main(cfg):
         with ThreadPoolExecutor(max_workers=cfg.num_parallel_runs) as executor:
             futures = []
             for parallel_run_id in range(cfg.num_parallel_runs):
-                futures.append(executor.submit(parallel_run, cfg, it, parallel_run_id))
+                futures.append(executor.submit(parallel_run, cfg, it, parallel_run_id, cfg.num_parallel_runs == 1))
             for future in as_completed(futures):
                 res = future.result()
                 if res is None:

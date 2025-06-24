@@ -2,109 +2,83 @@ import numpy as np
 import random
 
 def set_terrain(length, width, field_resolution, difficulty):
-    """Logs and ramps: The robot traverses a series of log-like cylindrical obstacles and angled ramps that require climbing, balancing, and stepping down."""
+    """Urban-style parkour: series of low, wide railings and variable curbs for precision stepping and balance."""
 
     def m_to_idx(m):
         """Converts meters to quantized indices."""
         return np.round(m / field_resolution).astype(np.int16) if not (isinstance(m, list) or isinstance(m, tuple)) else [round(i / field_resolution) for i in m]
 
     height_field = np.zeros((m_to_idx(length), m_to_idx(width)))
-    goals = np.zeros((5, 2))
+    goals = np.zeros((8, 2))
 
-    # Basic parameters
-    course_length = m_to_idx(length)
-    course_width = m_to_idx(width)
-    mid_y = course_width // 2
+    # -- Parameters for "urban parkour" elements --
+    # Difficulty controls rail (beam) height, curb height, and spacing
+    min_beam_height = 0.04 + 0.04 * difficulty  # 4-8cm low rails
+    max_beam_height = 0.06 + 0.10 * difficulty  # up to 16cm
+    min_curb_height = 0.05 + 0.03 * difficulty  # 5-8cm curbs
+    max_curb_height = 0.08 + 0.09 * difficulty  # up to 17cm
+    beam_width = 0.12 + 0.04 * (1-difficulty)   # 12-16cm narrow "rails"
+    curb_width = 0.40 + 0.20 * (1-difficulty)   # 40-60cm curbs
+    beam_length = 1.2 + 2.5 * (1-difficulty)    # 1.2-3.7m for each railing
+    curb_length = 0.7 + 1.1 * (1-difficulty)    # 0.7-1.8m for each curb
 
-    # 1. Start area flat and safe
-    spawn_length = m_to_idx(2.0)
-    height_field[:spawn_length, :] = 0
+    min_spacing = 0.5
+    max_spacing = 1.0 + 0.8 * difficulty
 
-    # 2. First section: "Log" balance (force straight walking and coordination)
-    # The log is a narrow but traversable round obstacle crossing the path in x direction for at least 1.0 m wide
-    log_start = m_to_idx(2.2)
-    log_length = m_to_idx(1.5 + 1.0 * difficulty)  # longer logs as difficulty increases
-    log_width = m_to_idx(1.0)
-    log_radius = 0.07 + 0.12 * difficulty  # higher means harder
-    log_center_y = mid_y + m_to_idx(random.uniform(-0.5, 0.5))  # add slight offset
+    mid_y = m_to_idx(width / 2)
 
-    # Add "log" using a rounded top
-    for x in range(log_start, log_start + log_length):
-        for y in range(log_center_y - log_width // 2, log_center_y + log_width // 2):
-            # Calculate distance from center for the rounded effect
-            rel = (y - log_center_y) * field_resolution
-            if abs(rel) < log_radius:
-                height_field[x, y] = np.sqrt(log_radius ** 2 - rel ** 2)
-            else:
-                height_field[x, y] = -0.1   # small depression/flanking sides so it can't bypass easily
+    # -- Flat spawn area --
+    spawn_length = m_to_idx(2)
+    height_field[0:spawn_length, :] = 0
+    goals[0] = [spawn_length-1, mid_y]
 
-    # First goal after the log
-    goals[0] = [spawn_length, mid_y]  # spawn line
-    goals[1] = [log_start + log_length // 2, log_center_y]
+    cur_x = spawn_length
 
-    # 3. Second section: Steep up ramp (bilateral leg strength & climbing)
-    ramp1_start = log_start + log_length + m_to_idx(0.2)
-    ramp1_length = m_to_idx(1.0 + 0.5 * difficulty)
-    ramp1_width = m_to_idx(1.4)
-    ramp1_height = 0.1 + 0.18 * difficulty  # makes ramp steeper/higher on harder settings
+    # Helper for safe margin (nothing within 0.5m of course edges)
+    safe_margin_idx = m_to_idx(0.5)
+    y_min = safe_margin_idx
+    y_max = m_to_idx(width) - safe_margin_idx
 
-    ramp1_center_y = mid_y + m_to_idx(random.uniform(-0.2, 0.2))
-    ramp1_y1 = ramp1_center_y - ramp1_width // 2
-    ramp1_y2 = ramp1_center_y + ramp1_width // 2
+    # Helper for placing and storing obstacles
+    def place_beam(start_x, length, center_y, width, height, goal_idx):
+        start_idx = int(start_x)
+        end_idx = int(np.clip(start_x + m_to_idx(length), 0, height_field.shape[0]))
+        half_w = m_to_idx(width / 2)
+        y1 = int(np.clip(center_y - half_w, safe_margin_idx, height_field.shape[1] - safe_margin_idx))
+        y2 = int(np.clip(center_y + half_w, safe_margin_idx, height_field.shape[1] - safe_margin_idx))
+        height_field[start_idx:end_idx, y1:y2] = height
+        # Goal at middle of the beam
+        goals[goal_idx] = [start_idx + (end_idx - start_idx)//2, (y1 + y2)//2]
 
-    for i, x in enumerate(range(ramp1_start, ramp1_start + ramp1_length)):
-        slope = (i / ramp1_length) * ramp1_height
-        height_field[x, ramp1_y1:ramp1_y2] = slope
+    def place_curb(start_x, length, center_y, width, height, goal_idx):
+        # Like beam but wider: curb
+        place_beam(start_x, length, center_y, width, height, goal_idx)  # alias
 
-    # 2nd goal: Halfway up the ramp
-    halfway_ramp_x = ramp1_start + ramp1_length // 2
-    goals[2] = [halfway_ramp_x, ramp1_center_y]
+    # Alternate beams (narrow rails) and wide curbs in a zig-zag
+    for i in range(1, 8):
+        if i % 2 == 1:
+            # Beam ("rail")
+            b_len = beam_length + random.uniform(-0.2, 0.2)
+            b_ht = random.uniform(min_beam_height, max_beam_height)
+            centery = int(np.clip(mid_y + random.randint(-m_to_idx(1.0), m_to_idx(1.0)), y_min, y_max))
+            place_beam(cur_x, b_len, centery, beam_width, b_ht, i)
+            cur_x += m_to_idx(b_len)
+        else:
+            # Curb step (wide/low)
+            c_len = curb_length + random.uniform(-0.1, 0.1)
+            c_ht = random.uniform(min_curb_height, max_curb_height)
+            centery = int(np.clip(mid_y + random.randint(-m_to_idx(1.1), m_to_idx(1.1)), y_min, y_max))
+            place_curb(cur_x, c_len, centery, curb_width, c_ht, i)
+            cur_x += m_to_idx(c_len)
 
-    # 4. Third section: Ramp down (descending control and safe stepping)
-    ramp2_start = ramp1_start + ramp1_length
-    ramp2_length = m_to_idx(1.0 + 0.4 * difficulty)
-    ramp2_width = m_to_idx(1.4)
-    ramp2_height = ramp1_height  # Same height as up ramp
-    ramp2_center_y = mid_y + m_to_idx(random.uniform(-0.2, 0.2))
-    ramp2_y1 = ramp2_center_y - ramp2_width // 2
-    ramp2_y2 = ramp2_center_y + ramp2_width // 2
+        # Add gap ("jump"/step down to ground)
+        if i < 7:
+            gap_size = random.uniform(min_spacing, max_spacing)
+            gap_idx = m_to_idx(gap_size)
+            cur_x += gap_idx  # gap = floor (height 0)
 
-    for i, x in enumerate(range(ramp2_start, ramp2_start + ramp2_length)):
-        slope = ramp2_height * (1 - i / ramp2_length)
-        height_field[x, ramp2_y1:ramp2_y2] = slope
-
-    # 3rd goal: End of the down ramp
-    ramp2_exit_x = ramp2_start + ramp2_length - 1
-    goals[3] = [ramp2_exit_x, ramp2_center_y]
-
-    # 5. Fourth section: Alternating short "logs" as stepping stones (precise stepping and planning)
-    stones_start = ramp2_start + ramp2_length + m_to_idx(0.2)
-    num_stones = 3 + int(2 * difficulty)
-    stone_spacing = m_to_idx(0.5 + 0.4 * difficulty)  # spread out more at harder settings
-    stone_width = m_to_idx(0.45)
-    stone_length = m_to_idx(0.50)
-    stone_height = 0.10 + 0.13 * difficulty
-    stone_y_offsets = [m_to_idx(d) for d in np.linspace(-0.4, 0.4, num_stones) if abs(d) < (course_width // 2 - stone_width)]
-
-    for i in range(num_stones):
-        cx = stones_start + i * stone_spacing
-        cy = mid_y + random.choice([-1, 1]) * (random.randint(0, m_to_idx(0.8)))
-        cy = np.clip(cy, stone_width, course_width - stone_width)
-        xf, xt = int(cx - stone_length // 2), int(cx + stone_length // 2)
-        yf, yt = int(cy - stone_width // 2), int(cy + stone_width // 2)
-        height_field[xf:xt, yf:yt] = stone_height
-
-    # Penultimate goal: On last stone
-    last_stone_x = stones_start + (num_stones - 1) * stone_spacing
-    last_stone_y = mid_y
-    goals[4] = [last_stone_x, last_stone_y]
-
-    # After last goal: last several meters are flat for smooth finish
-    end_flat_start = last_stone_x + m_to_idx(0.7)
-    height_field[end_flat_start:, :] = 0
-
-    # Clamp everything to fit inside the field bounds and not overflow
-    height_field = height_field[:course_length, :course_width]
-    goals = np.clip(goals, [[0, 0]], [[course_length-1, course_width-1]])
+    # Fill remainder with flat ground to finish
+    cur_x = int(np.clip(cur_x, 0, height_field.shape[0]))
+    height_field[cur_x:, :] = 0
 
     return height_field, goals
